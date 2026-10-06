@@ -1,50 +1,95 @@
 # ============================================================
-# Кандидатски профил & Цели за кариерно развитие
+# Кандидатски профил & CV: Петър Ганчев (Petur Ganchev)
+# Синхронизирано директно с LinkedIn профила и DeepLearning.AI цели
 # ============================================================
 
 candidate:
-  name: "Petur"
+  name: "Petur Ganchev"
+  email: "peturganchev93@gmail.com"
+  linkedin: "https://www.linkedin.com/in/petur-ganchev"
+  location: "Sofia, Bulgaria (Lozenets)"
+  languages:
+    - language: "Bulgarian"
+      proficiency: "Native / Bilingual"
+    - language: "English"
+      proficiency: "Professional Working"
+
   current_objective: >
-    Преквалификация в сферата на Agentic AI Engineering.
-    Следвам специализирани курсове в DeepLearning.AI. Търся реалните изисквания
-    на пазара в София и Remote за изграждане на целенасочено портфолио, CV и проекти.
+    Висококвалифициран софтуерен специалист с над 8 години корпоративен опит в Dynata
+    и инженерно образование по Роботика и Мехатроника, преквалифициращ се като
+    Agentic AI Engineer. Инженерният ми бекграунд в системи за автоматизация, state machines
+    и feedback цикли се пренася директно в архитектурата на автономни мулти-агентни AI системи
+    (LangGraph, CrewAI, AutoGen). Активно изграждам production-ready портфолио проекти с
+    Advanced RAG, Tool Calling и локални/облачни LLM модели чрез специализации в DeepLearning.AI.
+
+  experience_history:
+    - company: "Dynata"
+      role: "Senior Survey Programmer"
+      period: "August 2024 - Present (2+ years in senior role)"
+      location: "Sofia, Bulgaria"
+      focus: "Разработка на комплексна логика, управление на потоци от данни, алгоритмична верификация, качество и автоматизация."
+    - company: "Dynata"
+      role: "Survey Programmer"
+      period: "December 2020 - August 2024 (3 years 9 months)"
+      location: "Sofia, Bulgaria"
+      focus: "Скриптиране, логическа архитектура, обработка на данни и оптимизация на програмни процеси."
+    - company: "Dynata"
+      role: "Junior Survey Programmer"
+      period: "August 2018 - December 2020 (2 years 5 months)"
+      location: "Sofia, Bulgaria"
+      focus: "Софтуерно програмиране, дебъгване и интеграция."
+    - company: "Dais Software"
+      role: "Junior .NET Developer (Trainee)"
+      period: "April 2017 - May 2017"
+      location: "Sofia, Bulgaria"
+      focus: "C#, .NET софтуерни основи и обектно-ориентирано програмиране."
+
+  education:
+    - institution: "Technical University of Varna (Технически университет - Варна)"
+      degree: "Bachelor's degree, Mechatronics, Robotics, and Automation Engineering"
+      period: "2012 - 2016"
+      key_strengths: >
+        Солидна математическа и инженерна подготовка: теория на автоматичното управление,
+        state machines (крайни автомати), сензорни системи и обратни връзки (feedback loops).
+        Идеална фундаментална основа за мулти-агентни AI системи и графови архитектури.
 
   target_roles:
     - "Agentic AI Engineer"
+    - "AI Solutions Engineer"
     - "AI Engineer"
-    - "LLM Engineer"
-    - "GenAI Engineer"
-    - "Generative AI Developer"
+    - "LLM Application Developer"
     - "AI Automation Engineer"
-    - "Machine Learning Engineer"
+    - "GenAI Engineer"
     - "Python AI Developer"
 
-  skills_in_learning_roadmap:
-    core_programming:
-      - "Python"
-      - "FastAPI"
-      - "Asyncio"
-      - "Git"
-    ai_agent_frameworks:
-      - "LangChain"
-      - "LangGraph"
-      - "LlamaIndex"
-      - "CrewAI"
-      - "AutoGen"
-      - "Pydantic AI"
-    llm_and_genai:
-      - "RAG (Retrieval-Augmented Generation)"
-      - "Tool Calling / Function Calling"
-      - "Vector Databases (Chroma, Qdrant, Pinecone, Weaviate)"
-      - "Prompt Engineering"
-      - "Context Window Management"
-      - "Model Evaluation (Ragas, Trulens)"
-    platforms_and_apis:
-      - "OpenAI API"
-      - "Google Gemini API"
-      - "Anthropic Claude API"
-      - "Hugging Face"
-      - "Ollama"
+  skills_and_stack:
+    proven_professional_skills:
+      - "8+ години корпоративен опит в програмиране и автоматизация"
+      - "Problem Solving & Analytical Skills"
+      - "State Machines & Automated Feedback Loops"
+      - "Complex Data Flow & Logic Programming"
+      - "English (Professional Working)"
+      - "Систематично дебъгване и контрол на качеството на данните"
+
+    ai_stack_in_active_mastery:
+      core_python:
+        - "Python (Advanced, Type Hinting, Asyncio)"
+        - "FastAPI / Pydantic"
+        - "Git & GitHub Workflow"
+      agentic_frameworks:
+        - "LangGraph (State Graphs, Cycles, Human-in-the-loop)"
+        - "CrewAI (Role-playing multi-agent systems)"
+        - "AutoGen (Conversational agent orchestration)"
+        - "LangChain & LlamaIndex"
+      rag_and_vector_dbs:
+        - "Advanced RAG (Hybrid Search, Re-ranking, Query Rewriting)"
+        - "Vector Databases (Qdrant, ChromaDB, PGVector)"
+        - "Embedding Models & Semantic Search"
+      production_and_evals:
+        - "LLM Evaluations (Ragas, TruLens - Faithfulness, Relevance)"
+        - "Tool Calling & Function Execution"
+        - "Docker & Containerization"
+        - "Google Gemini API, OpenAI API, Claude 3.5 Sonnet, Ollama"
 
   locations:
     - "София"
@@ -53,5 +98,5 @@ candidate:
     - "Дистанционно"
     - "Bulgaria"
 
-  experience_level: "Junior / Mid / Transitioning to AI"
-  min_match_score_for_alert: 60  # Минимален % съвпадение за пращане на известие в Discord/Telegram
+  experience_level: "Senior Professional Transitioning to Agentic AI"
+  min_match_score_for_alert: 60

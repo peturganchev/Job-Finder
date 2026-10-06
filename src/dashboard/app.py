@@ -100,7 +100,13 @@ min_salary = st.sidebar.number_input(
 search_query = st.sidebar.text_input("Търси по заглавие или компания", "")
 
 # Табове в основния екран
-tab1, tab2, tab3 = st.tabs(["📋 Списък с обяви", "📊 Пазарен анализ (София & Remote)", "⚙️ Профил"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📋 Списък с обяви",
+    "🗺️ Skill Roadmap",
+    "🚀 Портфолио Проекти",
+    "📊 Пазарен анализ (София & Remote)",
+    "👤 Профил & CV"
+])
 
 with tab1:
     selected_status = None if status_filter == "Всички" else status_filter
@@ -189,6 +195,119 @@ with tab1:
                         st.rerun()
 
 with tab2:
+    st.subheader("🗺️ Пътна карта за умения: От Senior Programmer към Agentic AI Engineer")
+    st.caption("Персонализиран анализ на база твоето CV (Петър Ганчев, Dynata 8+ год., ТУ-Варна Мехатроника & Роботика)")
+
+    st.info("""
+    💡 **Твоето ключово предимство (Unfair Advantage):**
+    За разлика от кандидатите, идващи от чист уеб девелъпмънт, ти имаш **инженерно образование по Роботика и Мехатроника** и **8+ години скриптиране на комплексна логика в Dynata**.
+    Теорията на автоматичното управление, крайните автомати (**Finite State Machines**) и обратните връзки (**Feedback Loops**) са **ТОЧНО това, което задвижва мулти-агентните AI системи (LangGraph, StateGraphs, Self-Correction)**!
+    """)
+
+    st.markdown("### 📊 Твоят напредък по ключовите Agentic AI умения")
+
+    col_s1, col_s2 = st.columns(2)
+
+    with col_s1:
+        st.markdown("#### 1. Модерен Python & Бекенд")
+        s1 = st.checkbox("Python Advanced (Type Hints, OOP, Pydantic v2)", value=True, key="sk_py")
+        s2 = st.checkbox("FastAPI (Асинхронни REST ендпойнтове)", value=True, key="sk_fa")
+        s3 = st.checkbox("Asyncio (Паралелни извиквания на LLM модели)", value=False, key="sk_async")
+
+        st.markdown("#### 2. LLM Фундамент & Tool Calling")
+        s4 = st.checkbox("Structured Outputs (Гарантиран Pydantic JSON изход)", value=True, key="sk_struct")
+        s5 = st.checkbox("Function Calling / Tool Execution (Агентът вика API-та)", value=True, key="sk_tools")
+        s6 = st.checkbox("Context Window Optimization & Prompt Engineering", value=True, key="sk_prompt")
+
+    with col_s2:
+        st.markdown("#### 3. Advanced RAG & Векторни бази")
+        s7 = st.checkbox("Векторни бази (Qdrant, ChromaDB, PGVector)", value=False, key="sk_vect")
+        s8 = st.checkbox("Hybrid Search (Dense вектора + Sparse ключови думи)", value=False, key="sk_hyb")
+        s9 = st.checkbox("Re-ranking модели (Cohere / BGE-Reranker)", value=False, key="sk_rerank")
+
+        st.markdown("#### 4. Агентни Архитектури & Evals")
+        s10 = st.checkbox("LangGraph (State Graphs, Цикли, Human-in-the-loop)", value=False, key="sk_graph")
+        s11 = st.checkbox("CrewAI / AutoGen (Ролеви мулти-агентни екипи)", value=False, key="sk_crew")
+        s12 = st.checkbox("LLM Evaluations (Ragas, TruLens - измерване на точност)", value=False, key="sk_eval")
+
+    all_skills = [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12]
+    completed_skills = sum(1 for s in all_skills if s)
+    total_skills = len(all_skills)
+    progress_ratio = completed_skills / total_skills
+
+    st.progress(progress_ratio)
+    st.markdown(f"**Текущ статус:** Усвоени **{completed_skills}** от **{total_skills}** ключови умения (**{int(progress_ratio * 100)}%**) 🚀")
+
+    st.divider()
+
+    st.markdown("### 📚 Препоръчана пътека с курсове (DeepLearning.AI)")
+    st.markdown("""
+    1. **ChatGPT Prompt Engineering for Developers** & **LangChain for LLM App Development** *(Основи на веригите)*
+    2. **Building Systems with the ChatGPT API** & **LlamaIndex Developer Course** *(RAG и памет)*
+    3. **AI Agents in LangGraph** & **Multi AI Agent Systems with CrewAI** *(КРИТИЧНО: Тук ставаш Agentic AI инженер!)*
+    4. **Evaluating and Debugging Generative AI Models** *(Метрики, тестове и липса на халюцинации)*
+    """)
+
+with tab3:
+    st.subheader("🚀 Портфолио Проекти за пазара в София")
+    st.caption("Тези 4 проекта директно покриват изискванията в обявите на Avenga, Postbank, SiteGround, Cognizant и Tieto.")
+
+    st.markdown("### 🛠️ Списък с препоръчителни MVP Проекти")
+
+    # Проект 1: Job-Finder
+    with st.container(border=True):
+        st.markdown("#### 1. 🤖 Job-Finder & Market Intelligence Agent")
+        st.markdown(":green[**СТАТУС: В ПРОИЗВОДСТВО (Active v1.0)**]")
+        st.write("""
+        **Какво прави:** Автономна агентна система, която обхожда LinkedIn, dev.bg и jobs.bg,
+        дедуплицира позиции в SQLite, анализира съвпадението с Google Gemini Bulk API и визуализира в Streamlit.
+        """)
+        st.markdown("**Технологичен стек:** `Python 3.14`, `Playwright Stealth`, `Google Gemini 3.5 Flash`, `SQLite`, `Streamlit`, `Rich`")
+        repo_url_1 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/job-finder", key="repo_1")
+        st.caption("✅ Локално активен в `g:/Personal Files/Projects/Job-Finder`")
+
+    # Проект 2: Multi-Agent Dev Crew
+    with st.container(border=True):
+        st.markdown("#### 2. 👥 Autonomous Dev Team Multi-Agent System")
+        st.markdown(":orange[**СТАТУС: СЛЕДВАЩ ЗА РАЗРАБОТКА (Next Up)**]")
+        st.write("""
+        **Какво прави:** Екип от 3 специализирани автономни агента (Product Owner, Python Coder, QA Engineer).
+        Системата приема GitHub Issue, Product Owner агентът разписва спецификация, Coder агентът пише кода,
+        а QA агентът изпълнява Pytest тестове в Docker контейнер и връща обратна връзка при грешка до 100% успех.
+        """)
+        st.markdown("**Технологичен стек:** `CrewAI` / `LangGraph`, `FastAPI`, `Docker`, `GitHub REST API`, `Pytest`")
+        repo_url_2 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/multi-agent-dev-crew", key="repo_2")
+        st.caption("🎯 Насочен към: Аутсорсинг лидери в София (Avenga, Cognizant, Tieto Tech Consulting)")
+
+    # Проект 3: Compliance RAG Auditor
+    with st.container(border=True):
+        st.markdown("#### 3. 🏦 Enterprise Compliance & Financial RAG Auditor")
+        st.markdown(":blue[**СТАТУС: ПЛАНИРАН (Roadmap)**]")
+        st.write("""
+        **Какво прави:** Агент за финансови/юридически документи. Използва Hybrid Search (Dense вектора + BM25) с Cohere Re-ranker.
+        Включва втори вътрешен одитиращ агент, който проверява всяко твърдение спрямо точния параграф в източника преди генериране на отговор.
+        """)
+        st.markdown("**Технологичен стек:** `LlamaIndex`, `Qdrant` / `PGVector`, `FastAPI`, `Ragas Evals`")
+        repo_url_3 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/compliance-rag-auditor", key="repo_3")
+        st.caption("🎯 Насочен към: Банков и финтех сектор в София (Postbank, UBB / DZI, Paysafe, Nexo)")
+
+    # Проект 4: Customer Support Hub
+    with st.container(border=True):
+        st.markdown("#### 4. 🎯 AI Customer Support Hub с Real-time Evals")
+        st.markdown(":blue[**СТАТУС: ПЛАНИРАН (Roadmap)**]")
+        st.write("""
+        **Какво прави:** Автономен агент за обслужване на клиенти с Tool Calling (проверка на поръчки, статус на акаунт).
+        Включва Observability табло, което следи латентност, удовлетвореност на отговорите и открива халюцинации в реално време.
+        """)
+        st.markdown("**Технологичен стек:** `LangChain`, `TruLens`, `FastAPI`, `Streamlit`, `SQLite`")
+        repo_url_4 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/support-eval-hub", key="repo_4")
+        st.caption("🎯 Насочен към: Продуктови технологични компании (SiteGround, First. Best in Sports)")
+
+    st.divider()
+    st.subheader("🔗 GitHub Live Tracker (Подготовка за интеграция)")
+    st.write("Когато качиш проектите в твоя GitHub акаунт, тук ще свържем GitHub REST API и ще следим брой коммити, stars, отворени PRs и статус на живо!")
+
+with tab4:
     st.subheader("📈 Пазарен отчет за изискванията в София")
     st.write("Този модул синтезира какво търсят работодателите в София и Remote за Agentic AI роли.")
 
@@ -206,10 +325,19 @@ with tab2:
         else:
             st.info("Все още няма генериран отчет. Натисни бутона по-горе за да създадеш първия отчет!")
 
-with tab3:
-    st.subheader("👤 Твоят профил & DeepLearning.AI Roadmap")
+with tab5:
+    st.subheader("👤 Твоят профил & CV (Петър Ганчев)")
+    st.markdown("""
+    * **Име:** Петър Ганчев (Petur Ganchev)
+    * **Контакти:** `peturganchev93@gmail.com` | [LinkedIn Профил](https://www.linkedin.com/in/petur-ganchev)
+    * **Текуща позиция:** Senior Survey Programmer @ **Dynata** (8+ години корпоративен опит)
+    * **Образование:** Бакалавър по **Мехатроника, Роботика и Автоматизация** (Технически Университет - Варна)
+    * **Цел:** Преквалификация към **Agentic AI Engineer**
+    """)
+
+    st.markdown("### 📄 Пълен конфигурационен файл (config/profile.yaml)")
     profile_path = Path("config/profile.yaml")
     if profile_path.exists():
         with open(profile_path, "r", encoding="utf-8") as f:
             st.code(f.read(), language="yaml")
-    st.caption("Можеш да редактираш файла config/profile.yaml по всяко време директно в проекта.")
+    st.caption("Този файл се използва автоматично от Google Gemini за персонализирана оценка на обявите и генериране на мотивационни писма.")

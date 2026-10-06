@@ -113,8 +113,8 @@ def cmd_stats():
         console.print(src_table)
 
 
-def cmd_reanalyze():
-    """Извършва бълк Gemini AI анализ на всички обяви в базата, които все още нямат такъв."""
+def cmd_reanalyze(all_jobs: bool = False):
+    """Извършва бълк Gemini AI анализ на обявите в базата."""
     repo = JobRepository()
     analyzer = GeminiJobAnalyzer()
 
@@ -122,7 +122,11 @@ def cmd_reanalyze():
         console.print("[red]⚠️ Липсва валиден GEMINI_API_KEY в .env файла.[/red]")
         return
 
-    jobs_to_analyze = repo.get_jobs_without_ai_analysis()
+    if all_jobs:
+        jobs_to_analyze = repo.get_all_jobs_for_reanalysis()
+    else:
+        jobs_to_analyze = repo.get_jobs_without_ai_analysis()
+
     if not jobs_to_analyze:
         console.print("[green]✅ Всички обяви в базата данни вече имат пълен Gemini AI анализ![/green]")
         return
@@ -306,7 +310,8 @@ def main():
     parser.add_argument("--dashboard", action="store_true", help="Стартира Streamlit визуалния дашборд")
     parser.add_argument("--insights", action="store_true", help="Генерира пазарен доклад за Agentic AI в София")
     parser.add_argument("--stats", action="store_true", help="Показва статистика за базата данни")
-    parser.add_argument("--reanalyze", action="store_true", help="Пуска бълк Gemini анализ за всички обяви без AI оценка")
+    parser.add_argument("--reanalyze", action="store_true", help="Пуска бълк Gemini анализ за обявите в базата")
+    parser.add_argument("--all", action="store_true", help="Преоценява абсолютно всички обяви в базата с обновения профил")
     parser.add_argument("--sources", nargs="+", default=["all"], help="Източници (dev.bg, jobs.bg, linkedin или all)")
     parser.add_argument("--headless", action="store_true", help="Пуска браузъра в скрит режим")
     parser.add_argument("--max-jobs", type=int, default=15, help="Максимален брой обяви на източник за едно пускане")
@@ -322,7 +327,7 @@ def main():
     elif args.stats:
         cmd_stats()
     elif args.reanalyze:
-        cmd_reanalyze()
+        cmd_reanalyze(all_jobs=args.all)
     elif args.search:
         cmd_search(sources=args.sources, headless=args.headless, max_jobs=args.max_jobs)
     else:

@@ -201,6 +201,13 @@ class JobRepository:
             """)
             return [self._row_to_job(row) for row in cursor.fetchall()]
 
+    def get_all_jobs_for_reanalysis(self) -> List[Job]:
+        """Връща абсолютно всички обяви в базата данни за цялостно преоценяване."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM jobs ORDER BY id ASC")
+            return [self._row_to_job(row) for row in cursor.fetchall()]
+
     def get_all_jobs(
         self,
         status: Optional[str] = None,
