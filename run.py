@@ -113,6 +113,65 @@ def cmd_stats():
         console.print(src_table)
 
 
+def cmd_reanalyze():
+    """Извършва бълк Gemini AI анализ на всички обяви в базата, които все още нямат такъв."""
+    repo = JobRepository()
+    analyzer = GeminiJobAnalyzer()
+
+    if not analyzer.is_configured():
+        console.print("[red]⚠️ Липсва валиден GEMINI_API_KEY в .env файла.[/red]")
+        return
+
+    jobs_to_analyze = repo.get_jobs_without_ai_analysis()
+    if not jobs_to_analyze:
+        console.print("[green]✅ Всички обяви в базата данни вече имат пълен Gemini AI анализ![/green]")
+        return
+
+    console.print(Panel.fit(f"[bold magenta]🧠 Стартиране на бълк Gemini анализ за {len(jobs_to_analyze)} обяви...[/bold magenta]"))
+
+    batch_size = 8
+    updated_count = 0
+    for i in range(0, len(jobs_to_analyze), batch_size):
+        batch = jobs_to_analyze[i:i + batch_size]
+        batch_payload = [
+            {
+                "job_id": j.job_id,
+                "title": j.title,
+                "company": j.company,
+                "location": j.location,
+                "description": j.description
+            }
+            for j in batch
+        ]
+
+        console.print(f"📦 Обработка на пакет от {len(batch)} обяви с 1 заявка към Gemini...")
+        batch_analysis = analyzer.analyze_jobs_batch(batch_payload)
+
+        for job in batch:
+            res = batch_analysis.get(job.job_id, {})
+            if res:
+                job.match_score = res.get("match_score", 50)
+                job.ai_summary = res.get("ai_summary", "")
+                job.matched_skills = res.get("matched_skills", [])
+                job.missing_skills = res.get("missing_skills", [])
+                job.cover_letter = res.get("cover_letter", "")
+
+                repo.update_ai_analysis(
+                    job_id=job.id,
+                    match_score=job.match_score,
+                    ai_summary=job.ai_summary,
+                    matched_skills=job.matched_skills,
+                    missing_skills=job.missing_skills,
+                    cover_letter=job.cover_letter
+                )
+                updated_count += 1
+                score_color = "green" if job.match_score >= 70 else "yellow"
+                console.print(f"   [{score_color}]Мач: {job.match_score}%[/{score_color}] | [bold]{job.title}[/bold] @ {job.company}")
+
+    console.print(f"\n[bold green]✅ Успешно актуализирани {updated_count} обяви чрез бълк заявки![/bold green]")
+    console.print("💡 Можеш да ги видиш в дашборда с: [cyan]python run.py --dashboard[/cyan]")
+
+
 def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
     """
     Основен пайплайн: Търсене -> Дедупликация -> AI Оценка -> Запис в SQLite -> Известия.
@@ -139,6 +198,7 @@ def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
     if "linkedin" in sources or "all" in sources:
         scrapers.append(LinkedInScraper(page))
 
+    new_jobs_to_analyze = []
     new_jobs_added = 0
 
     try:
@@ -161,46 +221,74 @@ def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
                 if details.get("posted_date"):
                     job.posted_date = details["posted_date"]
 
-                # 3. AI Анализ с Google Gemini
-                if job.description:
-                    console.print(f"   🧠 AI анализ с Gemini за '{job.title}'...")
-                    analysis = analyzer.analyze_job(
-                        title=job.title,
-                        company=job.company,
-                        location=job.location,
-                        description=job.description
-                    )
-                    job.match_score = analysis.get("match_score", 50)
-                    job.ai_summary = analysis.get("ai_summary", "")
-                    job.matched_skills = analysis.get("matched_skills", [])
-                    job.missing_skills = analysis.get("missing_skills", [])
-                    job.cover_letter = analysis.get("cover_letter", "")
+                # Ако има заплата, да я поставим на челно място в описанието
+                if job.salary and not (job.description or "").startswith("💰 Обявена заплата:"):
+                    job.description = f"💰 Обявена заплата: {job.salary}\n\n" + (job.description or "")
 
-                    score_color = "green" if job.match_score >= 70 else "yellow"
-                    console.print(f"   [{score_color}]AI Мач: {job.match_score}%[/{score_color}] | {job.ai_summary[:80]}...")
-
-                # 4. Запис в SQLite
+                # 3. Запис в SQLite
                 job_id = repo.add_job(job)
                 if not job_id:
                     continue
 
                 job.id = job_id
                 new_jobs_added += 1
-
-                # 5. Изпращане на известие ако отговаря на прага
-                if (job.match_score or 0) >= min_score_for_alert:
-                    notified = False
-                    if discord.is_configured():
-                        if discord.send_job_alert(job):
-                            notified = True
-                    if telegram.is_configured():
-                        if telegram.send_job_alert(job):
-                            notified = True
-
-                    if notified:
-                        repo.mark_as_notified(job_id)
+                new_jobs_to_analyze.append(job)
 
                 browser_mgr.human_delay(1.0, 2.5)
+
+        # 4. ПАКЕТЕН (BULK) AI АНАЛИЗ С ЕДНА ЗАЯВКА
+        if new_jobs_to_analyze:
+            console.print(f"\n[bold magenta]🧠 Изпращане на {len(new_jobs_to_analyze)} нови обяви за бълк AI анализ към Gemini...[/bold magenta]")
+
+            # Разделяне на пакети по до 8 обяви за оптимално качество и квота
+            batch_size = 8
+            for i in range(0, len(new_jobs_to_analyze), batch_size):
+                batch = new_jobs_to_analyze[i:i + batch_size]
+                batch_payload = [
+                    {
+                        "job_id": j.job_id,
+                        "title": j.title,
+                        "company": j.company,
+                        "location": j.location,
+                        "description": j.description
+                    }
+                    for j in batch
+                ]
+
+                batch_analysis = analyzer.analyze_jobs_batch(batch_payload)
+
+                for job in batch:
+                    res = batch_analysis.get(job.job_id, {})
+                    job.match_score = res.get("match_score", 50)
+                    job.ai_summary = res.get("ai_summary", "")
+                    job.matched_skills = res.get("matched_skills", [])
+                    job.missing_skills = res.get("missing_skills", [])
+                    job.cover_letter = res.get("cover_letter", "")
+
+                    repo.update_ai_analysis(
+                        job_id=job.id,
+                        match_score=job.match_score,
+                        ai_summary=job.ai_summary,
+                        matched_skills=job.matched_skills,
+                        missing_skills=job.missing_skills,
+                        cover_letter=job.cover_letter
+                    )
+
+                    score_color = "green" if job.match_score >= 70 else "yellow"
+                    console.print(f"   [{score_color}]Мач: {job.match_score}%[/{score_color}] | [bold]{job.title}[/bold] @ {job.company}")
+
+                    # 5. Изпращане на известие ако отговаря на прага
+                    if (job.match_score or 0) >= min_score_for_alert:
+                        notified = False
+                        if discord.is_configured():
+                            if discord.send_job_alert(job):
+                                notified = True
+                        if telegram.is_configured():
+                            if telegram.send_job_alert(job):
+                                notified = True
+
+                        if notified:
+                            repo.mark_as_notified(job.id)
 
     finally:
         context.close()
@@ -218,6 +306,7 @@ def main():
     parser.add_argument("--dashboard", action="store_true", help="Стартира Streamlit визуалния дашборд")
     parser.add_argument("--insights", action="store_true", help="Генерира пазарен доклад за Agentic AI в София")
     parser.add_argument("--stats", action="store_true", help="Показва статистика за базата данни")
+    parser.add_argument("--reanalyze", action="store_true", help="Пуска бълк Gemini анализ за всички обяви без AI оценка")
     parser.add_argument("--sources", nargs="+", default=["all"], help="Източници (dev.bg, jobs.bg, linkedin или all)")
     parser.add_argument("--headless", action="store_true", help="Пуска браузъра в скрит режим")
     parser.add_argument("--max-jobs", type=int, default=15, help="Максимален брой обяви на източник за едно пускане")
@@ -232,6 +321,8 @@ def main():
         cmd_insights()
     elif args.stats:
         cmd_stats()
+    elif args.reanalyze:
+        cmd_reanalyze()
     elif args.search:
         cmd_search(sources=args.sources, headless=args.headless, max_jobs=args.max_jobs)
     else:

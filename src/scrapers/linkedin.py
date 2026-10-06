@@ -1,11 +1,13 @@
 """
 LinkedIn Job Scraper.
-Leverages persistent session (cookies) to bypass authwalls and rate limits,
-targeting Agentic AI / LLM / Python engineering roles in Sofia & Remote.
+Uses resilient HTTP client with desktop browser headers to query
+LinkedIn's public guest jobs portal (Bulgaria & Sofia).
+Bypasses authwalls and redirect loops without requiring cookies.
 """
 import time
 import random
 import re
+import httpx
 from typing import List, Dict, Any
 from urllib.parse import quote
 from bs4 import BeautifulSoup
@@ -14,12 +16,27 @@ from src.database.models import Job, JobSource, ApplicationStatus
 
 
 class LinkedInScraper(BaseScraper):
-    def __init__(self, page):
+    def __init__(self, page=None):
         super().__init__(page, name="linkedin")
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,bg;q=0.8",
+            "Cache-Control": "max-age=0",
+            "Sec-Ch-Ua": '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1"
+        }
+        self.client = httpx.Client(headers=self.headers, follow_redirects=True, timeout=18.0)
 
     def search(self, keywords: List[str], max_jobs: int = 25) -> List[Job]:
         """
-        Търси в LinkedIn обяви за България/София от последните 7 дни.
+        Търси в публичния портал на LinkedIn за свободни позиции в България (последни 7 дни).
         """
         found_jobs: List[Job] = []
         seen_urls = set()
@@ -29,82 +46,43 @@ class LinkedInScraper(BaseScraper):
                 break
 
             encoded_kw = quote(kw)
-            # f_TPR=r604800 = последните 7 дни (604800 сек)
-            search_url = f"https://www.linkedin.com/jobs/search/?keywords={encoded_kw}&location=Bulgaria&f_TPR=r604800"
+            search_url = f"https://www.linkedin.com/jobs/search?keywords={encoded_kw}&location=Bulgaria&f_TPR=r604800"
 
             try:
                 print(f"🔍 [LinkedIn] Търсене за '{kw}': {search_url}")
-                self.page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
-                time.sleep(random.uniform(2.0, 3.5))
+                response = self.client.get(search_url)
 
-                # Плавно скролваме за зареждане на обявите в списъка
-                for _ in range(4):
-                    self.page.mouse.wheel(0, 600)
-                    time.sleep(random.uniform(0.7, 1.2))
+                if response.status_code != 200:
+                    print(f"⚠️ [LinkedIn] Статус код {response.status_code} за '{kw}'. Опит за резервен вариант...")
+                    # Опит без филтър за дата
+                    fallback_url = f"https://www.linkedin.com/jobs/search?keywords={encoded_kw}&location=Bulgaria"
+                    response = self.client.get(fallback_url)
 
-                html = self.page.content()
-                soup = BeautifulSoup(html, "html.parser")
-
-                # Търсим контейнери на обявите
-                job_cards = soup.select(
-                    "li.jobs-search-results__list-item, div.job-card-container, div.base-card, div.base-search-card"
-                )
-
-                if not job_cards:
-                    # Резервен вариант: търсим директно линковете към обяви
-                    links = soup.select("a[href*='/jobs/view/']")
-                    for a in links:
-                        if len(found_jobs) >= max_jobs:
-                            break
-                        href = a.get("href", "").split("?")[0]
-                        if not href or href in seen_urls:
-                            continue
-
-                        title = a.get_text(strip=True)
-                        if not title or len(title) < 4:
-                            continue
-
-                        if self.is_blacklisted(title):
-                            continue
-
-                        seen_urls.add(href)
-                        job_id_match = re.search(r'/jobs/view/(\d+)', href)
-                        job_id = job_id_match.group(1) if job_id_match else href.split("/")[-1]
-
-                        found_jobs.append(Job(
-                            source=JobSource.LINKEDIN,
-                            job_id=f"li_{job_id}",
-                            title=title,
-                            company="LinkedIn Company",
-                            location="Sofia / Remote",
-                            url=href,
-                            status=ApplicationStatus.NEW
-                        ))
+                if response.status_code != 200:
+                    print(f"⚠️ [LinkedIn] Неуспешно извличане (HTTP {response.status_code})")
                     continue
+
+                soup = BeautifulSoup(response.text, "html.parser")
+                job_cards = soup.select(".base-card, .base-search-card, li.jobs-search-results__list-item")
 
                 for card in job_cards:
                     if len(found_jobs) >= max_jobs:
                         break
 
-                    # Търсене на заглавие и линк
-                    title_elem = card.select_one(
-                        "a.job-card-list__title, a.base-card__full-link, h3.base-search-card__title, a[href*='/jobs/view/']"
-                    )
+                    title_elem = card.select_one(".base-search-card__title, h3, a.base-card__full-link")
                     if not title_elem:
                         continue
 
                     title = title_elem.get_text(strip=True)
-                    href = title_elem.get("href", "").split("?")[0]
-                    if not href or not href.startswith("http"):
+                    if not title or len(title) < 4:
                         continue
 
-                    if href in seen_urls:
+                    link_elem = card.select_one("a.base-card__full-link, a[href*='/jobs/view/']")
+                    href = link_elem["href"].split("?")[0] if link_elem and link_elem.get("href") else ""
+                    if not href or href in seen_urls:
                         continue
 
-                    # Компания
-                    comp_elem = card.select_one(
-                        ".job-card-container__primary-description, h4.base-search-card__subtitle, a[data-tracking-control-name*='company']"
-                    )
+                    comp_elem = card.select_one(".base-search-card__subtitle, a[data-tracking-control-name*='company']")
                     company = comp_elem.get_text(strip=True) if comp_elem else "Неизвестна"
 
                     if self.is_blacklisted(title, company):
@@ -112,15 +90,11 @@ class LinkedInScraper(BaseScraper):
 
                     seen_urls.add(href)
 
-                    # Локация
-                    loc_elem = card.select_one(
-                        ".job-card-container__metadata-item, span.job-search-card__location"
-                    )
-                    location = loc_elem.get_text(strip=True) if loc_elem else "София / Remote"
+                    loc_elem = card.select_one(".job-search-card__location")
+                    location = loc_elem.get_text(strip=True) if loc_elem else "София / България"
 
-                    # Извличане на ID
-                    job_id_match = re.search(r'/jobs/view/(\d+)', href)
-                    job_id = job_id_match.group(1) if job_id_match else href.split("/")[-1]
+                    id_match = re.search(r'/jobs/view/.*?(\d+)', href) or re.search(r'-(\d+)$', href)
+                    job_id = id_match.group(1) if id_match else href.split("/")[-1]
 
                     job = Job(
                         source=JobSource.LINKEDIN,
@@ -133,6 +107,8 @@ class LinkedInScraper(BaseScraper):
                     )
                     found_jobs.append(job)
 
+                time.sleep(random.uniform(1.2, 2.5))
+
             except Exception as e:
                 print(f"⚠️ [LinkedIn] Грешка при търсене за '{kw}': {e}")
 
@@ -140,44 +116,25 @@ class LinkedInScraper(BaseScraper):
         return found_jobs
 
     def extract_job_details(self, job_url: str) -> dict:
-        """Извлича пълния текст на обявата от LinkedIn."""
+        """Извлича пълния текст на обявата от публичната страница в LinkedIn."""
         try:
-            self.page.goto(job_url, wait_until="domcontentloaded", timeout=20000)
-            time.sleep(random.uniform(1.5, 2.5))
+            time.sleep(random.uniform(0.8, 1.8))
+            response = self.client.get(job_url)
 
-            # Скролваме малко за зареждане на тялото
-            self.page.mouse.wheel(0, 400)
-            time.sleep(1.0)
+            if response.status_code != 200:
+                return {"description": "", "posted_date": None, "salary": None}
 
-            # Опитваме да кликнем "Show more" бутона ако има
-            try:
-                show_more_btn = self.page.query_selector(
-                    "button.show-more-less-html__button, button[aria-label*='Show more'], button[aria-label*='повече']"
-                )
-                if show_more_btn and show_more_btn.is_visible():
-                    show_more_btn.click()
-                    time.sleep(0.5)
-            except Exception:
-                pass
-
-            html = self.page.content()
-            soup = BeautifulSoup(html, "html.parser")
+            soup = BeautifulSoup(response.text, "html.parser")
 
             desc_elem = soup.select_one(
-                ".jobs-description__content, .show-more-less-html__markup, .description__text, article"
+                ".show-more-less-html__markup, .description__text, section.show-more-less-html, main article"
             )
             description = desc_elem.get_text(separator="\n", strip=True) if desc_elem else ""
 
-            # Дата на публикуване
-            date_elem = soup.select_one(
-                "span.jobs-unified-top-card__posted-date, time.job-search-card__listdate, time"
-            )
+            date_elem = soup.select_one(".posted-time-ago__text, time")
             posted_date = date_elem.get_text(strip=True) if date_elem else None
 
-            # Заплата (ако има посочена в горния панел)
-            sal_elem = soup.select_one(
-                "li.job-details-jobs-unified-top-card__job-insight:contains('€'), span:contains('$')"
-            )
+            sal_elem = soup.select_one("span:contains('€'), span:contains('$'), span:contains('BGN')")
             salary = sal_elem.get_text(strip=True) if sal_elem else None
 
             return {
@@ -186,5 +143,5 @@ class LinkedInScraper(BaseScraper):
                 "salary": salary
             }
         except Exception as e:
-            print(f"⚠️ [LinkedIn] Грешка при четене на детайли за {job_url}: {e}")
+            print(f"⚠️ [LinkedIn] Грешка при извличане на детайли: {e}")
             return {"description": "", "posted_date": None, "salary": None}

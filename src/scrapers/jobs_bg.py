@@ -73,7 +73,11 @@ class JobsBgScraper(BaseScraper):
                     if href in seen_urls:
                         continue
 
-                    title = link.get_text(strip=True)
+                    raw_title = link.get_text(strip=True)
+                    # Изчистване на икони и допълнителни тагове от jobs.bg (star, location_on, chair и др.)
+                    clean_title = re.sub(r'^(?:star)+', '', raw_title).strip()
+                    clean_title = re.split(r'(?:location_on|chair|public|phone|Ниво|София;|Заплата|Отпуск)', clean_title)[0].strip()
+                    title = clean_title if len(clean_title) >= 3 else raw_title
                     if not title or len(title) < 4:
                         continue
 
@@ -83,11 +87,16 @@ class JobsBgScraper(BaseScraper):
 
                     seen_urls.add(href)
 
+                    # Извличане на обявена заплата от картата (ако има)
+                    salary = None
+                    sal_match = re.search(r'Заплата\s*(?:от)?\s*([0-9\s]+до\s*[0-9\s]+(?:EUR|BGN|лв|€)[^\s;]*)', raw_title, re.IGNORECASE)
+                    if sal_match:
+                        salary = sal_match.group(1).strip()
+
                     # Опитваме се да намерим компания и локация от родителския контейнер
                     parent_card = link.find_parent("tr") or link.find_parent("div", class_=lambda c: c and "job" in c)
                     company = "Неизвестна"
                     location = "София / България"
-                    salary = None
 
                     if parent_card:
                         # Търсене на компания
@@ -100,10 +109,11 @@ class JobsBgScraper(BaseScraper):
                         if loc_elem:
                             location = loc_elem.get_text(strip=True)
 
-                        # Търсене на заплата
-                        sal_elem = parent_card.select_one("[class*='salary'], span.text-success, b:contains('BGN')")
-                        if sal_elem:
-                            salary = sal_elem.get_text(strip=True)
+                        # Търсене на заплата ако не е намерена от заглавието
+                        if not salary:
+                            sal_elem = parent_card.select_one("[class*='salary'], span.text-success, b:contains('BGN')")
+                            if sal_elem:
+                                salary = sal_elem.get_text(strip=True)
 
                     if self.is_blacklisted(title, company):
                         continue

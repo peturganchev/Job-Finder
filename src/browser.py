@@ -112,6 +112,8 @@ class BrowserManager:
             except Exception:
                 pass
 
+        # Не инжектираме единична li_at бисквитка, тъй като без JSESSIONID/Opera TLS тя води до ERR_TOO_MANY_REDIRECTS
+        # LinkedIn се обхожда стабилно през публичния портал без бисквитки
         return playwright, context, page
 
     def open_interactive_login(self):

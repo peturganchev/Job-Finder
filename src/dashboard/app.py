@@ -54,6 +54,20 @@ with col4:
 
 st.divider()
 
+import re
+from typing import Optional
+
+def extract_salary_num(salary_str: Optional[str]) -> Optional[int]:
+    """Извлича максималното число от текста на заплатата за филтриране."""
+    if not salary_str:
+        return None
+    # Премахваме интервали между цифри (напр. '2 500' -> '2500')
+    cleaned = re.sub(r'(\d)\s+(\d)', r'\1\2', salary_str)
+    nums = re.findall(r'\b\d{3,6}\b', cleaned)
+    if nums:
+        return max(int(n) for n in nums)
+    return None
+
 # Страничен панел с филтри
 st.sidebar.header("🔍 Филтри")
 
@@ -69,7 +83,20 @@ source_filter = st.sidebar.selectbox(
     index=0
 )
 
-min_score = st.sidebar.slider("Минимално AI съвпадение (%)", 0, 100, 30)
+min_score = st.sidebar.slider("🎯 Минимално AI съвпадение (%)", 0, 100, 30)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("💰 Филтър по заплата")
+only_with_salary = st.sidebar.checkbox("Само с обявена заплата", value=False)
+min_salary = st.sidebar.number_input(
+    "Минимална сума (EUR / BGN)",
+    min_value=0,
+    max_value=20000,
+    value=0,
+    step=250,
+    help="Филтрира обяви, чиято посочена заплата достига или надвишава тази стойност."
+)
+
 search_query = st.sidebar.text_input("Търси по заглавие или компания", "")
 
 # Табове в основния екран
@@ -86,6 +113,19 @@ with tab1:
         limit=150
     )
 
+    # Филтриране по обявена заплата
+    if only_with_salary:
+        jobs = [j for j in jobs if j.salary and len(j.salary.strip()) > 0]
+
+    # Филтриране по минимална сума на заплатата
+    if min_salary > 0:
+        def matches_min_sal(j):
+            if not j.salary:
+                return False
+            num = extract_salary_num(j.salary)
+            return num is not None and num >= min_salary
+        jobs = [j for j in jobs if matches_min_sal(j)]
+
     # Филтриране по текст ако има
     if search_query:
         jobs = [
@@ -96,7 +136,7 @@ with tab1:
     st.subheader(f"Намерени {len(jobs)} обяви")
 
     if not jobs:
-        st.info("Няма обяви, отговарящи на избраните филтри. Опитай да намалиш минималния мач или пусни ново търсене.")
+        st.info("Няма обяви, отговарящи на избраните филтри. Опитай да намалиш минималния мач или изчисти филтъра за заплата.")
     else:
         for job in jobs:
             score = job.match_score or 0
@@ -107,13 +147,14 @@ with tab1:
             else:
                 score_badge = f":gray[{score}%]"
 
-            expander_title = f"{score_badge} | **{job.title}** @ {job.company} — *{job.location}* [{job.source}]"
+            sal_badge = f":blue[**💰 {job.salary}**] | " if job.salary else ""
+            expander_title = f"{score_badge} | {sal_badge}**{job.title}** @ {job.company} — *{job.location}* [{job.source}]"
             with st.expander(expander_title, expanded=(score >= 80)):
                 cols = st.columns([3, 1])
 
                 with cols[0]:
                     if job.salary:
-                        st.markdown(f"💰 **Заплата:** `{job.salary}`")
+                        st.markdown(f"💰 **Обявена заплата:** :green[**{job.salary}**]")
                     st.markdown(f"🌐 **Линк:** [Отвори оригиналната обява]({job.url})")
 
                     if job.ai_summary:
@@ -124,6 +165,10 @@ with tab1:
 
                     if job.missing_skills:
                         st.markdown(f"📚 **Умения за надграждане:** `{', '.join(job.missing_skills)}`")
+
+                    if job.description:
+                        with st.expander("📄 Преглед на пълното описание на обявата"):
+                            st.text(job.description[:4000])
 
                     if job.cover_letter:
                         with st.popover("✉️ Виж модел на мотивационно писмо"):

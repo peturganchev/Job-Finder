@@ -5,10 +5,21 @@ to extract in-demand skills, tech stacks, and portfolio project ideas
 to guide the user's DeepLearning.AI learning roadmap.
 """
 import os
+import sys
 import json
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from src.database.repository import JobRepository
 from src.intelligence.gemini_analyzer import GeminiJobAnalyzer
 
@@ -76,16 +87,27 @@ class MarketInsightsGenerator:
 5. 📚 Препоръчителен план за учене през DeepLearning.AI курсовете.
 """
 
-        try:
-            response = self.analyzer.client.models.generate_content(
-                model=self.analyzer.model_name,
-                contents=prompt
-            )
+        candidate_models = [self.analyzer.model_name, "gemini-3.5-flash-lite", "gemini-2.5-pro"]
+        seen_models = set()
+        models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
+
+        response = None
+        for m in models_to_try:
+            try:
+                response = self.analyzer.client.models.generate_content(
+                    model=m,
+                    contents=prompt
+                )
+                if response and response.text:
+                    break
+            except Exception:
+                continue
+
+        if response and response.text:
             header = f"# 🚀 Анализ на пазара за Agentic AI роли (София & Remote)\n*Генериран на: {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n"
             return header + response.text.strip()
-        except Exception as e:
-            print(f"⚠️ Грешка при Gemini генерация: {e}")
-            return self._generate_heuristic_report(jobs, stats)
+
+        return self._generate_heuristic_report(jobs, stats)
 
     def _generate_heuristic_report(self, jobs: List[Dict[str, str]], stats: Dict[str, Any]) -> str:
         """Базов пазарен доклад при липса на Gemini API ключ."""

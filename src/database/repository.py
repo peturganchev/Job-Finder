@@ -188,6 +188,19 @@ class JobRepository:
             """, (min_score,))
             return [self._row_to_job(row) for row in cursor.fetchall()]
 
+    def get_jobs_without_ai_analysis(self) -> List[Job]:
+        """Връща обяви, които нямат Gemini AI анализ или имат само базов евристичен анализ."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM jobs
+                WHERE ai_summary IS NULL
+                   OR ai_summary LIKE '%Базов евристичен%'
+                   OR match_score IS NULL
+                ORDER BY id ASC
+            """)
+            return [self._row_to_job(row) for row in cursor.fetchall()]
+
     def get_all_jobs(
         self,
         status: Optional[str] = None,

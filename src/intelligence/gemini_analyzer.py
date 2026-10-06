@@ -7,7 +7,7 @@ import os
 import json
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,7 +31,7 @@ def load_profile() -> dict:
 class GeminiJobAnalyzer:
     def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
         self.profile = load_profile()
         self.client = None
 
@@ -79,16 +79,34 @@ class GeminiJobAnalyzer:
 }}
 """
 
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.2,
+        )
+
+        response = None
+        candidate_models = [self.model_name, "gemini-3.5-flash-lite", "gemini-2.5-pro"]
+        # Премахваме дубликати, запазвайки реда
+        seen_models = set()
+        models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
+
+        for m in models_to_try:
+            try:
+                response = self.client.models.generate_content(
+                    model=m,
+                    contents=prompt,
+                    config=config
+                )
+                if response and response.text:
+                    break
+            except Exception as e:
+                # Ако моделът е претоварен (503) или недостъпен, опитваме следващия
+                continue
+
+        if not response or not response.text:
+            return self._heuristic_fallback(title, description)
+
         try:
-            config = types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2,
-            )
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=config
-            )
             data = json.loads(response.text)
             return {
                 "match_score": int(data.get("match_score", 50)),
@@ -99,8 +117,110 @@ class GeminiJobAnalyzer:
                 "recommendation": data.get("recommendation", "save_for_learning")
             }
         except Exception as e:
-            print(f"⚠️ Грешка при Gemini заявка ({e}). Използване на евристика...")
+            print(f"⚠️ Грешка при парсване на JSON ({e}). Използване на евристика...")
             return self._heuristic_fallback(title, description)
+
+    def analyze_jobs_batch(self, jobs: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """
+        Бълк (пакетен) анализ на списък от обяви с ЕДНА единствена заявка до Gemini.
+        Спестява API квоти и ресурси чрез пакетно оценяване в рамките на един промпт.
+        """
+        if not jobs:
+            return {}
+
+        if not self.is_configured():
+            return {
+                j["job_id"]: self._heuristic_fallback(j["title"], j["description"])
+                for j in jobs
+            }
+
+        candidate_info = json.dumps(self.profile.get("candidate", {}), ensure_ascii=False, indent=2)
+
+        job_blocks = []
+        for idx, j in enumerate(jobs, 1):
+            block = (
+                f"### ОБЯВА #{idx} (ID: {j['job_id']})\n"
+                f"- Заглавие: {j['title']}\n"
+                f"- Компания: {j['company']}\n"
+                f"- Локация: {j['location']}\n"
+                f"- Описание:\n{j['description'][:2500]}\n"
+            )
+            job_blocks.append(block)
+
+        all_jobs_text = "\n---\n".join(job_blocks)
+
+        prompt = f"""
+Ти си елитен технически кариерен консултант и Agentic AI архитект.
+Анализирай следните {len(jobs)} обяви за работа спрямо профила и целите на кандидата.
+
+КАНДИДАТ (ПРОФИЛ И ЦЕЛИ):
+{candidate_info}
+
+СПИСЪК С ОБЯВИ ЗА ПАКЕТНА ОЦЕНКА:
+{all_jobs_text}
+
+ЗАДАЧА:
+Оцени всяка обява поотделно и върни САМО валиден JSON масив, в който всеки елемент отговаря на една обява:
+[
+  {{
+    "job_id": "<точното ID от заглавието на съответната обява>",
+    "match_score": <цяло число от 0 до 100>,
+    "ai_summary": "<2-3 изречения на български: какво представлява позицията и основните отговорности>",
+    "matched_skills": ["<умение 1>", "<умение 2>"],
+    "missing_skills": ["<липсваща технология/изискване за портфолиото>"],
+    "recommendation": "<'apply' | 'save_for_learning' | 'skip'>",
+    "cover_letter_intro": "<кратък персонализиран уводен абзац за кандидатстване>"
+  }}
+]
+"""
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.2,
+        )
+
+        response = None
+        candidate_models = [self.model_name, "gemini-3.5-flash-lite", "gemini-2.5-pro"]
+        seen_models = set()
+        models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
+
+        for m in models_to_try:
+            try:
+                response = self.client.models.generate_content(
+                    model=m,
+                    contents=prompt,
+                    config=config
+                )
+                if response and response.text:
+                    break
+            except Exception:
+                continue
+
+        results = {}
+        if response and response.text:
+            try:
+                data = json.loads(response.text)
+                if isinstance(data, list):
+                    for item in data:
+                        jid = str(item.get("job_id", ""))
+                        results[jid] = {
+                            "match_score": int(item.get("match_score", 50)),
+                            "ai_summary": item.get("ai_summary", ""),
+                            "matched_skills": item.get("matched_skills", []),
+                            "missing_skills": item.get("missing_skills", []),
+                            "cover_letter": item.get("cover_letter_intro", ""),
+                            "recommendation": item.get("recommendation", "save_for_learning")
+                        }
+            except Exception as e:
+                print(f"⚠️ Грешка при парсване на пакетния JSON: {e}")
+
+        # За всяка обява, която евентуално липсва в отговора, прилагаме евристика
+        for j in jobs:
+            jid = j["job_id"]
+            if jid not in results:
+                results[jid] = self._heuristic_fallback(j["title"], j["description"])
+
+        return results
 
     def generate_full_cover_letter(self, title: str, company: str, description: str) -> str:
         """Генерира пълно, персонализирано мотивационно писмо."""
