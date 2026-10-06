@@ -1,0 +1,47 @@
+# ============================================================
+# Филтри за търсене на обяви и черен списък
+# ============================================================
+
+search_queries:
+  # Ключови думи за търсачките в jobs.bg, linkedin и dev.bg
+  primary:
+    - "AI Engineer"
+    - "Agentic"
+    - "LLM"
+    - "Generative AI"
+    - "Artificial Intelligence"
+    - "Machine Learning"
+  secondary:
+    - "Python AI"
+    - "LangChain"
+    - "Prompt Engineer"
+    - "AI Developer"
+
+dev_bg_categories:
+  - "artificial-intelligence"
+  - "python"
+
+locations:
+  - "Sofia"
+  - "София"
+  - "Remote"
+  - "България"
+
+# Черен списък: обяви, които съдържат тези термини в заглавието, се прескачат автоматично
+blacklist_title:
+  - "Senior Director"
+  - "VP of"
+  - "Head of AI"
+  - "Lead Architect"
+  - "Principal Engineer"
+  - "WordPress"
+  - "PHP Developer"
+  - "Frontend React"
+  - "iOS Developer"
+  - "Android Developer"
+  - "Java Developer"
+  - ".NET Developer"
+  - "Manual QA"
+
+# Черен списък на компании (ако има некоректни или нежелани)
+blacklist_companies: []

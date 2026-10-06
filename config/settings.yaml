@@ -1,0 +1,28 @@
+# ============================================================
+# Системни и браузърни настройки за скрейпърите
+# ============================================================
+
+paths:
+  database_file: "data/jobs.db"
+  session_dir: ".browser_session"
+  reports_dir: "reports"
+
+browser:
+  headless: false  # Първоначално false или конфигурируемо през .env
+  viewport:
+    width: 1920
+    height: 1080
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+  timeout_ms: 30000
+  slow_mo_ms: 100
+
+scraping:
+  human_delay_min_sec: 1.5
+  human_delay_max_sec: 3.5
+  max_jobs_per_source_run: 25
+  linkedin_days_back: 7 # Обяви от последните 7 дни
+
+ai:
+  default_model: "gemini-2.5-flash"
+  temperature: 0.2
+  max_output_tokens: 1500

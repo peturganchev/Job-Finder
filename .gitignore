@@ -1,0 +1,31 @@
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Sensitive files & Environment variables
+.env
+*.env
+
+# Browser sessions & cookies
+.browser_session/
+.cache/
+
+# Databases
+data/*.db
+data/*.sqlite3
+data/*.db-journal
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Streamlit config / cache
+.streamlit/

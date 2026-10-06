@@ -1,0 +1,57 @@
+# ============================================================
+# Кандидатски профил & Цели за кариерно развитие
+# ============================================================
+
+candidate:
+  name: "Petur"
+  current_objective: >
+    Преквалификация в сферата на Agentic AI Engineering.
+    Следвам специализирани курсове в DeepLearning.AI. Търся реалните изисквания
+    на пазара в София и Remote за изграждане на целенасочено портфолио, CV и проекти.
+
+  target_roles:
+    - "Agentic AI Engineer"
+    - "AI Engineer"
+    - "LLM Engineer"
+    - "GenAI Engineer"
+    - "Generative AI Developer"
+    - "AI Automation Engineer"
+    - "Machine Learning Engineer"
+    - "Python AI Developer"
+
+  skills_in_learning_roadmap:
+    core_programming:
+      - "Python"
+      - "FastAPI"
+      - "Asyncio"
+      - "Git"
+    ai_agent_frameworks:
+      - "LangChain"
+      - "LangGraph"
+      - "LlamaIndex"
+      - "CrewAI"
+      - "AutoGen"
+      - "Pydantic AI"
+    llm_and_genai:
+      - "RAG (Retrieval-Augmented Generation)"
+      - "Tool Calling / Function Calling"
+      - "Vector Databases (Chroma, Qdrant, Pinecone, Weaviate)"
+      - "Prompt Engineering"
+      - "Context Window Management"
+      - "Model Evaluation (Ragas, Trulens)"
+    platforms_and_apis:
+      - "OpenAI API"
+      - "Google Gemini API"
+      - "Anthropic Claude API"
+      - "Hugging Face"
+      - "Ollama"
+
+  locations:
+    - "София"
+    - "Sofia"
+    - "Remote"
+    - "Дистанционно"
+    - "Bulgaria"
+
+  experience_level: "Junior / Mid / Transitioning to AI"
+  min_match_score_for_alert: 60  # Минимален % съвпадение за пращане на известие в Discord/Telegram
