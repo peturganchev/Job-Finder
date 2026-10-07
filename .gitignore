@@ -15,6 +15,9 @@ ENV/
 data/*.db
 data/*.sqlite3
 data/*.db-journal
+data/user_settings.json
+data/.search.lock
+data/last_search.log
 
 # Python caches
 __pycache__/

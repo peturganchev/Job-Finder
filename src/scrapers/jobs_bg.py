@@ -6,7 +6,7 @@ import time
 import random
 import re
 from typing import List, Dict, Any
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 from bs4 import BeautifulSoup
 from src.scrapers.base_scraper import BaseScraper
 from src.database.models import Job, JobSource, ApplicationStatus
@@ -34,13 +34,12 @@ class JobsBgScraper(BaseScraper):
         found_jobs: List[Job] = []
         seen_urls = set()
 
-        for kw in keywords[:4]:
+        for kw in keywords:
             if len(found_jobs) >= max_jobs:
                 break
 
-            encoded_kw = quote(kw)
-            # Категория 56 е "ИТ - Софтуер / Разработка" в jobs.bg
-            search_url = f"https://www.jobs.bg/front_job_search.php?sub_cat_all=1&categories%5B%5D=56&keyword={encoded_kw}"
+            encoded_kw = quote_plus(kw)
+            search_url = f"https://www.jobs.bg/front_job_search.php?keywords%5B%5D={encoded_kw}"
 
             try:
                 print(f"🔍 [jobs.bg] Търсене за '{kw}': {search_url}")

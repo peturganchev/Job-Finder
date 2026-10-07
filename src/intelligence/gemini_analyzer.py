@@ -30,8 +30,10 @@ def load_profile() -> dict:
 
 class GeminiJobAnalyzer:
     def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = model_name or os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        from src.settings_manager import SettingsManager
+        sm = SettingsManager()
+        self.api_key = api_key or sm.get_api_key()
+        self.model_name = model_name or sm.load().ai.gemini_model or "gemini-3.5-flash"
         self.profile = load_profile()
         self.client = None
 
@@ -43,6 +45,28 @@ class GeminiJobAnalyzer:
 
     def is_configured(self) -> bool:
         return bool(self.client and self.api_key)
+
+    def test_connection(self) -> tuple:
+        """Прави една минимална заявка. Връща (успех: bool, съобщение: str)."""
+        if not self.api_key:
+            return False, "Няма въведен API ключ."
+        if not self.client:
+            return False, "Клиентът не можа да се инициализира (провери ключа или библиотеката google-genai)."
+        try:
+            resp = self.client.models.generate_content(model=self.model_name, contents="Reply with: OK")
+            text = (resp.text or "").strip()
+            return True, f"Връзката е успешна с модел `{self.model_name}` (отговор: {text[:20]})."
+        except Exception as e:
+            msg = str(e)
+            if "API_KEY_INVALID" in msg or "API key not valid" in msg or "401" in msg or "403" in msg:
+                return False, "Невалиден API ключ."
+            if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                return False, "Ключът е валиден, но квотата е изчерпана в момента (429). Опитай по-късно."
+            if "404" in msg:
+                return False, f"Моделът `{self.model_name}` не е достъпен за този ключ. Избери друг модел."
+            if "503" in msg or "UNAVAILABLE" in msg:
+                return False, "Моделът е претоварен (503). Ключът вероятно е валиден, опитай пак след малко."
+            return False, f"Грешка: {msg[:200]}"
 
     def analyze_job(self, title: str, company: str, location: str, description: str) -> Dict[str, Any]:
         """

@@ -41,21 +41,22 @@ class LinkedInScraper(BaseScraper):
         found_jobs: List[Job] = []
         seen_urls = set()
 
-        for kw in keywords[:4]:
+        for kw in keywords:
             if len(found_jobs) >= max_jobs:
                 break
 
             encoded_kw = quote(kw)
-            search_url = f"https://www.linkedin.com/jobs/search?keywords={encoded_kw}&location=Bulgaria&f_TPR=r604800"
+            encoded_loc = quote(self.location or "Bulgaria")
+            search_url = f"https://www.linkedin.com/jobs/search?keywords={encoded_kw}&location={encoded_loc}&f_TPR=r604800"
 
             try:
-                print(f"🔍 [LinkedIn] Търсене за '{kw}': {search_url}")
+                print(f"🔍 [LinkedIn] Търсене за '{kw}' ({self.location}): {search_url}")
                 response = self.client.get(search_url)
 
                 if response.status_code != 200:
                     print(f"⚠️ [LinkedIn] Статус код {response.status_code} за '{kw}'. Опит за резервен вариант...")
                     # Опит без филтър за дата
-                    fallback_url = f"https://www.linkedin.com/jobs/search?keywords={encoded_kw}&location=Bulgaria"
+                    fallback_url = f"https://www.linkedin.com/jobs/search?keywords={encoded_kw}&location={encoded_loc}"
                     response = self.client.get(fallback_url)
 
                 if response.status_code != 200:

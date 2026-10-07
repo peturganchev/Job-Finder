@@ -44,6 +44,7 @@ from src.intelligence.gemini_analyzer import GeminiJobAnalyzer
 from src.intelligence.market_insights import MarketInsightsGenerator
 from src.notifiers.discord import DiscordNotifier
 from src.notifiers.telegram import TelegramNotifier
+from src.settings_manager import SettingsManager
 
 
 def load_config() -> dict:
@@ -182,9 +183,20 @@ def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
     """
     console.print(Panel.fit("[bold blue]🔍 Стартиране на търсенето за нови обяви...[/bold blue]"))
 
+    settings_mgr = SettingsManager()
+    settings = settings_mgr.load()
+
     cfg = load_config()
-    keywords = cfg.get("filters", {}).get("search_queries", {}).get("primary", ["AI Engineer", "LLM", "Python"])
     min_score_for_alert = cfg.get("profile", {}).get("candidate", {}).get("min_match_score_for_alert", 60)
+
+    keywords = settings.search.keywords
+    # Ако max_jobs е по подразбиране 15, ползваме това от настройките. Иначе от CLI.
+    actual_max_jobs = max_jobs if max_jobs != 15 else settings.search.max_jobs_per_source
+
+    if sources != ["all"]:
+        active_sources = sources
+    else:
+        active_sources = settings_mgr.enabled_sources()
 
     repo = JobRepository()
     analyzer = GeminiJobAnalyzer()
@@ -195,11 +207,11 @@ def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
     playwright, context, page = browser_mgr.launch_session(headless=headless)
 
     scrapers = []
-    if "dev.bg" in sources or "all" in sources:
+    if "dev.bg" in active_sources:
         scrapers.append(DevBgScraper(page))
-    if "jobs.bg" in sources or "all" in sources:
+    if "jobs.bg" in active_sources:
         scrapers.append(JobsBgScraper(page))
-    if "linkedin" in sources or "all" in sources:
+    if "linkedin" in active_sources:
         scrapers.append(LinkedInScraper(page))
 
     new_jobs_to_analyze = []
@@ -208,7 +220,7 @@ def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
     try:
         for scraper in scrapers:
             console.print(f"\n[bold yellow]─── Обхождане на {scraper.name} ───[/bold yellow]")
-            found = scraper.search(keywords=keywords, max_jobs=max_jobs)
+            found = scraper.search(keywords=keywords, max_jobs=actual_max_jobs)
 
             for job in found:
                 # 1. Дедупликация

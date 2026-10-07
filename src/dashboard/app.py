@@ -16,6 +16,8 @@ from src.database.repository import JobRepository
 from src.database.models import ApplicationStatus
 from src.intelligence.gemini_analyzer import GeminiJobAnalyzer
 from src.intelligence.market_insights import MarketInsightsGenerator
+from src.settings_manager import SettingsManager
+import subprocess
 
 st.set_page_config(
     page_title="Job Finder AI • Dashboard",
@@ -100,12 +102,14 @@ min_salary = st.sidebar.number_input(
 search_query = st.sidebar.text_input("Търси по заглавие или компания", "")
 
 # Табове в основния екран
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab_search, tab2, tab3, tab4, tab5, tab_settings = st.tabs([
     "📋 Списък с обяви",
+    "🔍 Търсене",
     "🗺️ Skill Roadmap",
     "🚀 Портфолио Проекти",
-    "📊 Пазарен анализ (София & Remote)",
-    "👤 Профил & CV"
+    "📊 Пазарен анализ",
+    "👤 Профил & CV",
+    "⚙️ Настройки"
 ])
 
 with tab1:
@@ -194,41 +198,135 @@ with tab1:
                         st.success(f"Обновено на '{new_status}'!")
                         st.rerun()
 
+with tab_search:
+    st.subheader("🔍 Търсене на нови обяви")
+    
+    settings_mgr = SettingsManager()
+    settings = settings_mgr.load()
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🎯 Параметри за търсене")
+        keywords_text = st.text_area(
+            "Ключови думи (по 1 на ред)",
+            value="\n".join(settings.search.keywords),
+            height=150
+        )
+        
+        location = st.text_input("Локация (напр. Bulgaria, Remote, Sofia)", value=settings.search.location)
+        
+        max_jobs = st.slider(
+            "Максимум обяви на сайт (за едно търсене)",
+            min_value=1, max_value=50, value=settings.search.max_jobs_per_source
+        )
+        
+        if st.button("💾 Запази параметрите", key="save_search_params"):
+            settings.search.keywords = [k.strip() for k in keywords_text.split("\n") if k.strip()]
+            settings.search.location = location
+            settings.search.max_jobs_per_source = max_jobs
+            settings_mgr.save(settings)
+            st.success("Параметрите са запазени!")
+            
+    with col2:
+        st.markdown("### ▶️ Стартиране")
+        active_sources = settings_mgr.enabled_sources()
+        st.info(f"**Активни източници:** {', '.join(active_sources) if active_sources else 'Няма'}\n\n*(Можеш да ги промениш в таб ⚙️ Настройки)*")
+        
+        if settings_mgr.get_api_key_source() == "none":
+            st.warning("⚠️ Не е конфигуриран Gemini API ключ. Оценките ще бъдат базови (евристични). Добави ключ в таб ⚙️ Настройки.")
+            
+        lock_file = Path("data/.search.lock")
+        is_running = lock_file.exists()
+        
+        if is_running:
+            st.warning("🔄 Търсенето вече се изпълнява в момента. Моля, изчакай...")
+            if st.button("🧹 Изчисти блокировката (Force Unlock)"):
+                lock_file.unlink(missing_ok=True)
+                st.rerun()
+        else:
+            if not active_sources:
+                st.error("Не са избрани източници за търсене!")
+            else:
+                if st.button("▶️ Стартирай търсене сега", type="primary", use_container_width=True):
+                    # We create a lock file
+                    lock_file.touch()
+                    
+                    # We run run.py --search in background
+                    # We will output to a log file
+                    log_file = Path("data/search.log")
+                    with open(log_file, "w", encoding="utf-8") as f:
+                        f.write("Стартиране на търсенето...\n")
+                    
+                    cmd = [sys.executable, "run.py", "--search"]
+                    
+                    # Note: Popen does not block
+                    # We wrap it in a script or just let run.py remove the lock file.
+                    # Wait, run.py doesn't know about the lock file. We can pass a wrapper script or create a small subprocess that runs run.py and then removes the lock file.
+                    # A small python script inline:
+                    wrapper_script = f"""
+import subprocess
+import sys
+from pathlib import Path
+try:
+    with open('{log_file.as_posix()}', 'a', encoding='utf-8') as f:
+        subprocess.run({cmd}, stdout=f, stderr=subprocess.STDOUT)
+finally:
+    Path('{lock_file.as_posix()}').unlink(missing_ok=True)
+"""
+                    wrapper_path = Path("data/run_wrapper.py")
+                    wrapper_path.write_text(wrapper_script, encoding="utf-8")
+                    subprocess.Popen([sys.executable, str(wrapper_path)])
+                    st.success("Търсенето започна във фонов режим! Можеш да следиш лога по-долу.")
+                    st.rerun()
+                    
+        # Show log if running
+        if is_running:
+            log_file = Path("data/search.log")
+            if log_file.exists():
+                st.markdown("### Лог на изпълнението")
+                log_content = log_file.read_text(encoding="utf-8")
+                # get last 30 lines
+                log_lines = log_content.splitlines()[-30:]
+                st.code("\n".join(log_lines), language="text")
+                
+                # Auto-refresh mechanism via st_autorefresh or just manual
+                st.button("🔄 Обнови лога")
+
 with tab2:
-    st.subheader("🗺️ Пътна карта за умения: От Senior Programmer към Agentic AI Engineer")
-    st.caption("Персонализиран анализ на база твоето CV (Петър Ганчев, Dynata 8+ год., ТУ-Варна Мехатроника & Роботика)")
+    st.subheader("🗺️ Пътна карта за самоподготовка: Agentic Systems Developer")
+    st.caption("Базирана на съвпаденията между DeepLearning.AI и програмата на Sirma Academy за Agentic AI роли")
 
     st.info("""
-    💡 **Твоето ключово предимство (Unfair Advantage):**
-    За разлика от кандидатите, идващи от чист уеб девелъпмънт, ти имаш **инженерно образование по Роботика и Мехатроника** и **8+ години скриптиране на комплексна логика в Dynata**.
-    Теорията на автоматичното управление, крайните автомати (**Finite State Machines**) и обратните връзки (**Feedback Loops**) са **ТОЧНО това, което задвижва мулти-агентните AI системи (LangGraph, StateGraphs, Self-Correction)**!
+    💡 **Твоето ключово инженерно предимство (Unfair Advantage):**
+    За разлика от кандидатите, идващи от стандартен уеб девелъпмънт, ти имаш **инженерно образование по Роботика и Мехатроника (ТУ-Варна)** и **8+ години програмиране на комплексна логика в Dynata**.
+    Теорията на автоматичното управление, крайните автомати (**Finite State Machines**) и обратните връзки (**Feedback Loops**) са **ТОЧНО фундамента, върху който стъпват съвременните агентни графи (LangGraph, StateGraphs, Reflection Loops)**!
     """)
 
-    st.markdown("### 📊 Твоят напредък по ключовите Agentic AI умения")
+    st.markdown("### 📊 Твоят напредък по 3-те нива на специализация")
 
-    col_s1, col_s2 = st.columns(2)
+    col_s1, col_s2, col_s3 = st.columns(3)
 
     with col_s1:
-        st.markdown("#### 1. Модерен Python & Бекенд")
-        s1 = st.checkbox("Python Advanced (Type Hints, OOP, Pydantic v2)", value=True, key="sk_py")
-        s2 = st.checkbox("FastAPI (Асинхронни REST ендпойнтове)", value=True, key="sk_fa")
-        s3 = st.checkbox("Asyncio (Паралелни извиквания на LLM модели)", value=False, key="sk_async")
-
-        st.markdown("#### 2. LLM Фундамент & Tool Calling")
-        s4 = st.checkbox("Structured Outputs (Гарантиран Pydantic JSON изход)", value=True, key="sk_struct")
-        s5 = st.checkbox("Function Calling / Tool Execution (Агентът вика API-та)", value=True, key="sk_tools")
-        s6 = st.checkbox("Context Window Optimization & Prompt Engineering", value=True, key="sk_prompt")
+        st.markdown("#### 🟢 Ниво 1: Foundation (Основи)")
+        s1 = st.checkbox("Prompt Eng & Context Strategy", value=True, key="sk_p1")
+        s2 = st.checkbox("AI Python & Pydantic Validation", value=True, key="sk_p2")
+        s3 = st.checkbox("Building Systems with LLM APIs", value=True, key="sk_p3")
+        s4 = st.checkbox("LangChain Chaining & Chat with Data", value=True, key="sk_p4")
 
     with col_s2:
-        st.markdown("#### 3. Advanced RAG & Векторни бази")
-        s7 = st.checkbox("Векторни бази (Qdrant, ChromaDB, PGVector)", value=False, key="sk_vect")
-        s8 = st.checkbox("Hybrid Search (Dense вектора + Sparse ключови думи)", value=False, key="sk_hyb")
-        s9 = st.checkbox("Re-ranking модели (Cohere / BGE-Reranker)", value=False, key="sk_rerank")
+        st.markdown("#### 🟡 Ниво 2: Core Track (Агентно Ядро)")
+        s5 = st.checkbox("4-те Модела на Andrew Ng (Reflection, Tools, Plan, Multi-Agent)", value=True, key="sk_p5")
+        s6 = st.checkbox("Function & Tool Calling в код", value=True, key="sk_p6")
+        s7 = st.checkbox("Multi-Agent екипи с CrewAI", value=False, key="sk_p7")
+        s8 = st.checkbox("Event-Driven & Human-in-the-Loop Flows", value=False, key="sk_p8")
 
-        st.markdown("#### 4. Агентни Архитектури & Evals")
-        s10 = st.checkbox("LangGraph (State Graphs, Цикли, Human-in-the-loop)", value=False, key="sk_graph")
-        s11 = st.checkbox("CrewAI / AutoGen (Ролеви мулти-агентни екипи)", value=False, key="sk_crew")
-        s12 = st.checkbox("LLM Evaluations (Ragas, TruLens - измерване на точност)", value=False, key="sk_eval")
+    with col_s3:
+        st.markdown("#### 🔴 Ниво 3: Role Specialization (Agentic Systems)")
+        s9 = st.checkbox("Model Context Protocol (MCP) Сървъри", value=True, key="sk_p9")
+        s10 = st.checkbox("LangGraph StateGraphs & Дългосрочна Памет", value=False, key="sk_p10")
+        s11 = st.checkbox("Eval Harness (Оценка на точност & токени)", value=False, key="sk_p11")
+        s12 = st.checkbox("Advanced RAG & Unstructured Data Prep", value=False, key="sk_p12")
 
     all_skills = [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12]
     completed_skills = sum(1 for s in all_skills if s)
@@ -236,76 +334,113 @@ with tab2:
     progress_ratio = completed_skills / total_skills
 
     st.progress(progress_ratio)
-    st.markdown(f"**Текущ статус:** Усвоени **{completed_skills}** от **{total_skills}** ключови умения (**{int(progress_ratio * 100)}%**) 🚀")
+    st.markdown(f"**Текущ статус:** Усвоени **{completed_skills}** от **{total_skills}** ключови модула (**{int(progress_ratio * 100)}%**) 🚀")
 
     st.divider()
 
-    st.markdown("### 📚 Препоръчана пътека с курсове (DeepLearning.AI)")
-    st.markdown("""
-    1. **ChatGPT Prompt Engineering for Developers** & **LangChain for LLM App Development** *(Основи на веригите)*
-    2. **Building Systems with the ChatGPT API** & **LlamaIndex Developer Course** *(RAG и памет)*
-    3. **AI Agents in LangGraph** & **Multi AI Agent Systems with CrewAI** *(КРИТИЧНО: Тук ставаш Agentic AI инженер!)*
-    4. **Evaluating and Debugging Generative AI Models** *(Метрики, тестове и липса на халюцинации)*
-    """)
+    st.markdown("### 📚 Каталог с препоръчани курсове (DeepLearning.AI)")
+    
+    with st.expander("📖 Ниво 1: Foundation (Основи & AI-First Разработка)", expanded=False):
+        st.markdown("""
+        * **[AI Prompting for Everyone](https://www.deeplearning.ai/courses/ai-prompting-for-everyone)** — Основи на инженеринга на подкани и AI като мисловен партньор.
+        * **[ChatGPT Prompt Engineering for Developers](https://www.deeplearning.ai/courses/chatgpt-prompt-eng)** — Практически техники за формулиране на подкани при разработка на софтуер.
+        * **[AI Python for Beginners](https://www.deeplearning.ai/courses/ai-python-for-beginners)** — Модерен Python с AI асистенти за писане, тестване и дебъгване.
+        * **[Building Systems with the ChatGPT API](https://www.deeplearning.ai/courses/chatgpt-building-system)** — Проектиране на многостъпкови процеси и верижни извиквания.
+        * **[LangChain for LLM Application Development](https://www.deeplearning.ai/courses/langchain)** — Изграждане на основни приложения с LangChain framework.
+        * **[LangChain Chat with Your Data](https://www.deeplearning.ai/courses/langchain-chat-with-your-data)** — Внедряване на чат интерфейси върху лични документи и бизнес данни.
+        """)
+
+    with st.expander("⚙️ Ниво 2: Core Track (Агентни Работни Потоци)", expanded=True):
+        st.markdown("""
+        * **[Agentic AI](https://www.deeplearning.ai/courses/agentic-ai)** *(Централният курс на Andrew Ng!)* — Покрива 4-те основни дизайн патерна: **Reflection, Tool Use, Planning и Multi-Agent Collaboration**, както и системна оценка (evals) и анализ на грешки.
+        * **[Functions, Tools and Agents with LangChain](https://www.deeplearning.ai/courses/functions-tools-agents-langchain)** — Извикване на функции и сглобяване на агенти чрез LCEL.
+        * **[AI Agents in LangGraph](https://www.deeplearning.ai/courses/ai-agents-in-langgraph)** — Контролирани, циклични и гъвкави агентни работни потоци със State Machine.
+        * **[Multi AI Agent Systems with crewAI](https://www.deeplearning.ai/courses/multi-ai-agent-systems-with-crewai)** — Проектиране на колаборативни екипи от агенти с конкретни роли.
+        * **[Design, Develop, and Deploy Multi-Agent Systems with CrewAI](https://www.deeplearning.ai/courses/design-develop-and-deploy-multi-agent-systems-with-crewai)** — Цялостно изграждане, тестване и деплоймънт на бизнес агенти.
+        * **[Event-Driven Agentic Document Workflows](https://www.deeplearning.ai/courses/event-driven-agentic-document-workflows)** — Събитийно-ориентирани работни потоци за обработка на документи с Human-in-the-Loop обратна връзка.
+        """)
+
+    with st.expander("🎯 Ниво 3: Role Specialization (Agentic Systems Developer)", expanded=False):
+        st.markdown("""
+        * **[MCP: Build Rich-Context AI Apps with Anthropic](https://www.deeplearning.ai/courses/mcp-build-rich-context-ai-apps-with-anthropic)** — Model Context Protocol (MCP) за свързване на AI с външни бази и инструменти.
+        * **[Long-Term Agentic Memory With LangGraph](https://www.deeplearning.ai/courses/long-term-agentic-memory-with-langgraph)** — Управление на състоянието и дългосрочната памет на агентите през различни сесии (LangMem).
+        * **[AI Agentic Design Patterns with AutoGen](https://www.deeplearning.ai/courses/ai-agentic-design-patterns-with-autogen)** — Разговорни мултиагентни системи на Microsoft.
+        * **[Building Coding Agents with Tool Execution](https://www.deeplearning.ai/courses/building-coding-agents-with-tool-execution)** — Изграждане на сигурни изолирани пясъчници (sandboxes като E2B) за изпълнение на код от агенти.
+        * **[Building and Evaluating Data Agents](https://www.deeplearning.ai/courses/building-and-evaluating-data-agents)** — Изграждане на планиращи агенти върху бази данни и аналитични инструменти.
+        * **[Preprocessing Unstructured Data for LLM Applications](https://www.deeplearning.ai/courses/preprocessing-unstructured-data-for-llm-applications)** — Почистване, чанкване и структуриране на PDF и HTML за RAG.
+        """)
+
+    st.info("💡 **Стратегия за сертификация:** Преминаване на безплатните видео лекции + активиране на 1 месец PRO абонамент ($30) за изпълнение на интерактивните лаборатории и получаване на сертификати за LinkedIn.")
 
 with tab3:
-    st.subheader("🚀 Портфолио Проекти за пазара в София")
-    st.caption("Тези 4 проекта директно покриват изискванията в обявите на Avenga, Postbank, SiteGround, Cognizant и Tieto.")
+    st.subheader("🚀 GitHub Portfolio: Architecting AI Agents (From Foundational to Advanced)")
+    st.caption("Практическо портфолио от 5 специализирани проекта за пазара в София и международни роли")
 
-    st.markdown("### 🛠️ Списък с препоръчителни MVP Проекти")
+    st.markdown("### 🛠️ Проекти в портфолиото")
 
     # Проект 1: Job-Finder
     with st.container(border=True):
         st.markdown("#### 1. 🤖 Job-Finder & Market Intelligence Agent")
-        st.markdown(":green[**СТАТУС: В ПРОИЗВОДСТВО (Active v1.0)**]")
+        st.markdown(":green[**СТАТУС: В ПРОИЗВОДСТВО (Active v1.0)**] • *Ниво: Intermediate*")
         st.write("""
-        **Какво прави:** Автономна агентна система, която обхожда LinkedIn, dev.bg и jobs.bg,
-        дедуплицира позиции в SQLite, анализира съвпадението с Google Gemini Bulk API и визуализира в Streamlit.
+        **Какво прави:** Автономна агентна система, която обхожда dev.bg, jobs.bg и LinkedIn, дедуплицира обяви в SQLite, 
+        извършва бълк семантичен анализ с Google Gemini 3.5 Flash и предоставя пълен дашборд за наблюдение на пазара на труда.
         """)
-        st.markdown("**Технологичен стек:** `Python 3.14`, `Playwright Stealth`, `Google Gemini 3.5 Flash`, `SQLite`, `Streamlit`, `Rich`")
-        repo_url_1 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/job-finder", key="repo_1")
+        st.markdown("**Технологичен стек:** `Python 3.14`, `Playwright Stealth / httpx`, `Google Gemini 3.5 Flash`, `SQLite`, `Streamlit`, `Pydantic v2`")
+        repo_url_1 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/Job-Finder", key="repo_1")
         st.caption("✅ Локално активен в `g:/Personal Files/Projects/Job-Finder`")
 
-    # Проект 2: Multi-Agent Dev Crew
+    # Проект 2: Personal MCP Server
     with st.container(border=True):
-        st.markdown("#### 2. 👥 Autonomous Dev Team Multi-Agent System")
-        st.markdown(":orange[**СТАТУС: СЛЕДВАЩ ЗА РАЗРАБОТКА (Next Up)**]")
+        st.markdown("#### 2. 🔌 Personal MCP Server (Model Context Protocol)")
+        st.markdown(":orange[**СТАТУС: СЛЕДВАЩ ЗА РАЗРАБОТКА (Next Up)**] • *Ниво: Foundational to Intermediate*")
         st.write("""
-        **Какво прави:** Екип от 3 специализирани автономни агента (Product Owner, Python Coder, QA Engineer).
-        Системата приема GitHub Issue, Product Owner агентът разписва спецификация, Coder агентът пише кода,
-        а QA агентът изпълнява Pytest тестове в Docker контейнер и връща обратна връзка при грешка до 100% успех.
+        **Какво прави:** Персонализиран сървър по стандарта Model Context Protocol (MCP) на Anthropic. Сигурно излага локални 
+        файлове, бази данни и REST API-та като ресурси и инструменти към AI среди (Claude Desktop, Cursor IDE, Custom Agents).
         """)
-        st.markdown("**Технологичен стек:** `CrewAI` / `LangGraph`, `FastAPI`, `Docker`, `GitHub REST API`, `Pytest`")
-        repo_url_2 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/multi-agent-dev-crew", key="repo_2")
-        st.caption("🎯 Насочен към: Аутсорсинг лидери в София (Avenga, Cognizant, Tieto Tech Consulting)")
+        st.markdown("**Технологичен стек:** `Python`, `Anthropic MCP SDK`, `FastAPI / AsyncIO`, `JSON Schema`, `Pydantic`")
+        repo_url_2 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/personal-mcp-server", key="repo_2")
+        st.caption("🎯 Доказва: Познаване на актуалния индустриален стандарт за свързване на контекст към AI модели.")
 
-    # Проект 3: Compliance RAG Auditor
+    # Проект 3: Tool-Calling Agent с Eval Harness
     with st.container(border=True):
-        st.markdown("#### 3. 🏦 Enterprise Compliance & Financial RAG Auditor")
-        st.markdown(":blue[**СТАТУС: ПЛАНИРАН (Roadmap)**]")
+        st.markdown("#### 3. 🧪 Tool-Calling Agent с Eval Harness (Eval-Driven Development)")
+        st.markdown(":blue[**СТАТУС: ПЛАНИРАН (Roadmap)**] • *Ниво: Intermediate*")
         st.write("""
-        **Какво прави:** Агент за финансови/юридически документи. Използва Hybrid Search (Dense вектора + BM25) с Cohere Re-ranker.
-        Включва втори вътрешен одитиращ агент, който проверява всяко твърдение спрямо точния параграф в източника преди генериране на отговор.
+        **Какво прави:** Автономен агент за специфична бизнес задача с достъп до външни инструменти и цялостна тестова рамка (eval harness). 
+        Автоматично засича халюцинации, мери грешки при избор на инструменти (Tool Calling Accuracy) и оптимизира латентност и разход на токени.
         """)
-        st.markdown("**Технологичен стек:** `LlamaIndex`, `Qdrant` / `PGVector`, `FastAPI`, `Ragas Evals`")
-        repo_url_3 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/compliance-rag-auditor", key="repo_3")
-        st.caption("🎯 Насочен към: Банков и финтех сектор в София (Postbank, UBB / DZI, Paysafe, Nexo)")
+        st.markdown("**Технологичен стек:** `Python`, `Google Gemini SDK / OpenAI`, `Pydantic`, `pytest`, `Ragas / Evals Framework`")
+        repo_url_3 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/tool-calling-eval-agent", key="repo_3")
+        st.caption("🎯 Доказва: Инженерен подход (Eval-Driven Development), липса на халюцинации и контрол върху разходите.")
 
-    # Проект 4: Customer Support Hub
+    # Проект 4: Multi-Agent Research Assistant
     with st.container(border=True):
-        st.markdown("#### 4. 🎯 AI Customer Support Hub с Real-time Evals")
-        st.markdown(":blue[**СТАТУС: ПЛАНИРАН (Roadmap)**]")
+        st.markdown("#### 4. 👥 Multi-Agent Research Assistant (LangGraph & Reflection Pattern)")
+        st.markdown(":blue[**СТАТУС: ПЛАНИРАН (Roadmap)**] • *Ниво: Intermediate to Advanced*")
         st.write("""
-        **Какво прави:** Автономен агент за обслужване на клиенти с Tool Calling (проверка на поръчки, статус на акаунт).
-        Включва Observability табло, което следи латентност, удовлетвореност на отговорите и открива халюцинации в реално време.
+        **Какво прави:** Мултиагентна система, съставена от 3 специализирани агента (Researcher, Analyst, Fact-Checker/Editor). 
+        Приема тема, извършва автономно уеб търсене, синтезира информацията и чрез итеративна рефлексия (Reflection Loop) генерира валидиран Markdown доклад.
         """)
-        st.markdown("**Технологичен стек:** `LangChain`, `TruLens`, `FastAPI`, `Streamlit`, `SQLite`")
-        repo_url_4 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/support-eval-hub", key="repo_4")
-        st.caption("🎯 Насочен към: Продуктови технологични компании (SiteGround, First. Best in Sports)")
+        st.markdown("**Технологичен стек:** `LangGraph`, `CrewAI`, `Tavily Search API`, `Pydantic`, `Python`")
+        repo_url_4 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/multi-agent-researcher", key="repo_4")
+        st.caption("🎯 Доказва: Оркестрация на споделено състояние (State Management), крайни автомати и контрол върху автономността.")
+
+    # Проект 5: Production Observability Dashboard
+    with st.container(border=True):
+        st.markdown("#### 5. 📊 Production Observability Dashboard за AI Агенти")
+        st.markdown(":blue[**СТАТУС: ПЛАНИРАН (Roadmap)**] • *Ниво: Advanced*")
+        st.write("""
+        **Какво прави:** Централизирана система за мониторинг в реално време на агентни сесии. Прихваща индивидуални стъпки (spans) 
+        и цялостни пътища на изпълнение (traces), логва неуспешни извиквания на инструменти, следи латентността и консумацията на токени.
+        """)
+        st.markdown("**Технологичен стек:** `Langfuse / Phoenix (Arize) / LangSmith`, `OpenTelemetry`, `Python`, `Streamlit / Grafana`")
+        repo_url_5 = st.text_input("GitHub Репозиторий:", value="https://github.com/peturganchev/agent-observability-hub", key="repo_5")
+        st.caption("🎯 Доказва: Enterprise готовност (Production Readiness), мониторинг и зрялост при експлоатация на агентски системи.")
 
     st.divider()
     st.subheader("🔗 GitHub Live Tracker (Подготовка за интеграция)")
-    st.write("Когато качиш проектите в твоя GitHub акаунт, тук ще свържем GitHub REST API и ще следим брой коммити, stars, отворени PRs и статус на живо!")
+    st.write("След качване на проектите в твоя GitHub акаунт, тук ще свържем GitHub REST API и ще следим брой коммити, stars, отворени PRs и статус на живо!")
 
 with tab4:
     st.subheader("📈 Пазарен отчет за изискванията в София")
@@ -341,3 +476,84 @@ with tab5:
         with open(profile_path, "r", encoding="utf-8") as f:
             st.code(f.read(), language="yaml")
     st.caption("Този файл се използва автоматично от Google Gemini за персонализирана оценка на обявите и генериране на мотивационни писма.")
+
+with tab_settings:
+    st.subheader("⚙️ Настройки на системата")
+    
+    settings_mgr = SettingsManager()
+    settings = settings_mgr.load()
+    
+    st.markdown("### 🌐 Източници за търсене")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        use_devbg = st.checkbox("dev.bg", value=settings.sources.dev_bg)
+    with c2:
+        use_jobsbg = st.checkbox("jobs.bg", value=settings.sources.jobs_bg)
+    with c3:
+        use_linkedin = st.checkbox("LinkedIn", value=settings.sources.linkedin)
+        
+    st.markdown("### 🧠 Google Gemini AI")
+    api_source = settings_mgr.get_api_key_source()
+    if api_source == "settings":
+        source_msg = "Активен ключ от **настройките**."
+    elif api_source == "env":
+        source_msg = "Активен ключ от **.env** файла."
+    else:
+        source_msg = "⚠️ Липсва API ключ."
+        
+    st.caption(f"Статус на ключа: {source_msg}")
+    
+    current_masked = settings_mgr.mask_key(settings_mgr.get_api_key())
+    
+    new_key = st.text_input("Gemini API Key (Google AI Studio)", value="", type="password", placeholder=f"Текущ: {current_masked}")
+    st.markdown("[Вземи безплатен ключ от Google AI Studio](https://aistudio.google.com/)")
+    
+    col_ai1, col_ai2, col_ai3 = st.columns([1, 1, 2])
+    with col_ai1:
+        if st.button("💾 Запази ключ"):
+            settings_mgr.set_api_key(new_key)
+            st.success("Ключът е запазен!")
+            st.rerun()
+    with col_ai2:
+        if st.button("🗑️ Изтрий ключ"):
+            settings_mgr.set_api_key(None)
+            st.success("Ключът е изтрит от настройките.")
+            st.rerun()
+    with col_ai3:
+        if st.button("🧪 Тествай връзката"):
+            with st.spinner("Тестване на Gemini API..."):
+                analyzer = GeminiJobAnalyzer()
+                success, msg = analyzer.test_connection()
+                if success:
+                    st.success(f"Успех! {msg}")
+                else:
+                    st.error(f"Грешка: {msg}")
+
+    st.markdown("#### Модел")
+    selected_model = st.selectbox(
+        "Избери Gemini модел",
+        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"],
+        index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"] else 0
+    )
+    
+    st.markdown("### 🚫 Черен списък (Blacklist)")
+    st.caption("Обяви, съдържащи тези думи в заглавието или компанията, ще бъдат игнорирани (по 1 на ред).")
+    
+    bl_titles = st.text_area("Филтриране по заглавие", value="\n".join(settings.blacklist_title), height=100)
+    bl_comps = st.text_area("Филтриране по компания", value="\n".join(settings.blacklist_companies), height=100)
+    
+    if st.button("💾 Запази всички настройки", type="primary"):
+        settings.sources.dev_bg = use_devbg
+        settings.sources.jobs_bg = use_jobsbg
+        settings.sources.linkedin = use_linkedin
+        settings.ai.gemini_model = selected_model
+        settings.blacklist_title = [k.strip() for k in bl_titles.split("\n") if k.strip()]
+        settings.blacklist_companies = [k.strip() for k in bl_comps.split("\n") if k.strip()]
+        
+        # Validate sources
+        if not (use_devbg or use_jobsbg or use_linkedin):
+            st.error("Трябва да избереш поне един източник!")
+        else:
+            settings_mgr.save(settings)
+            st.success("Всички настройки са запазени!")
+            st.rerun()

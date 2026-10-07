@@ -20,11 +20,27 @@ def load_filters() -> dict:
 
 class BaseScraper(ABC):
     def __init__(self, page: Page, name: str = "base"):
+        from src.settings_manager import SettingsManager
         self.page = page
         self.name = name
         self.filters = load_filters()
-        self.blacklist_titles = [w.lower() for w in self.filters.get("blacklist_title", [])]
-        self.blacklist_companies = [c.lower() for c in self.filters.get("blacklist_companies", [])]
+        settings = SettingsManager().load()
+        self.location = settings.search.location or "Bulgaria"
+        self.dev_bg_categories = list(settings.sources.dev_bg_categories)
+        self._base_blacklist_titles = list(settings.blacklist_title)
+        self.blacklist_titles = [w.lower() for w in self._base_blacklist_titles]
+        self.blacklist_companies = [c.lower() for c in settings.blacklist_companies]
+
+    def set_search_context(self, keywords: List[str], location: Optional[str] = None):
+        """Задава локация и премахва думи от черния списък, които съвпадат с текущото търсене."""
+        from src.settings_manager import SettingsManager
+        if location:
+            self.location = location
+        effective = SettingsManager.effective_blacklist(self._base_blacklist_titles, keywords)
+        removed = set(self._base_blacklist_titles) - set(effective)
+        if removed:
+            print(f"ℹ️ [{self.name}] Изключени от черния списък за това търсене: {', '.join(sorted(removed))}")
+        self.blacklist_titles = [w.lower() for w in effective]
 
     def is_blacklisted(self, title: str, company: str = "") -> bool:
         """Проверява дали заглавието или компанията съдържат думи от черния списък."""

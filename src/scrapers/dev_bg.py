@@ -6,7 +6,7 @@ import time
 import random
 import re
 from typing import List, Dict, Any
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 from bs4 import BeautifulSoup
 from src.scrapers.base_scraper import BaseScraper
 from src.database.models import Job, JobSource, ApplicationStatus
@@ -23,17 +23,15 @@ class DevBgScraper(BaseScraper):
         found_jobs: List[Job] = []
         seen_urls = set()
 
-        # 1. Точни актуални категории в dev.bg
-        category_urls = [
-            "https://dev.bg/company/jobs/ml-ai-data/",
-            "https://dev.bg/company/jobs/python/",
-            "https://dev.bg/company/jobs/data-science/"
-        ]
+        # 1. Търсене по ключови думи (основен механизъм)
+        category_urls = []
+        for kw in keywords:
+            encoded = quote_plus(kw)
+            category_urls.append(f"https://dev.bg/?s={encoded}&post_type=job_listing")
 
-        # 2. Търсене по конкретни ключови думи
-        for kw in keywords[:2]:
-            encoded = quote(kw)
-            category_urls.append(f"https://dev.bg/jobs/?_keyword={encoded}")
+        # 2. Категории – само ако са избрани в Настройки
+        for cat in self.dev_bg_categories:
+            category_urls.append(f"https://dev.bg/company/jobs/{cat}/")
 
         for target_url in category_urls:
             if len(found_jobs) >= max_jobs:
