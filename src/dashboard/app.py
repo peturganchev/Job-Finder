@@ -28,7 +28,6 @@ st.set_page_config(
 )
 
 # Инициализиране на компонентите
-@st.cache_resource
 def get_repo():
     return JobRepository()
 
@@ -82,7 +81,7 @@ status_filter = st.sidebar.selectbox(
 
 source_filter = st.sidebar.selectbox(
     "Източник",
-    options=["Всички", "dev.bg", "jobs.bg", "linkedin"],
+    options=["Всички", "dev.bg", "jobs.bg", "linkedin", "himalayas", "euremotejobs", "hackernews"],
     index=0
 )
 
@@ -111,6 +110,9 @@ min_salary = st.sidebar.number_input(
 )
 
 search_query = st.sidebar.text_input("Търси по заглавие или компания", "")
+
+st.sidebar.markdown("---")
+only_remote = st.sidebar.checkbox("🌐 Само Remote", value=False, help="Показва само обяви, които са дистанционни")
 
 # Табове в основния екран
 tab1, tab_search, tab2, tab3, tab4, tab5, tab_settings = st.tabs([
@@ -155,6 +157,14 @@ with tab1:
             j for j in jobs
             if search_query.lower() in j.title.lower() or search_query.lower() in j.company.lower()
         ]
+
+    if only_remote:
+        remote_kws = ["remote", "дистанцион", "wfh", "anywhere"]
+        def is_remote(j):
+            loc = (j.location or "").lower()
+            tit = (j.title or "").lower()
+            return any(rk in loc or rk in tit for rk in remote_kws)
+        jobs = [j for j in jobs if is_remote(j)]
 
     col_h1, col_h2 = st.columns([3, 1])
     with col_h1:
@@ -245,7 +255,19 @@ with tab_search:
             height=150
         )
         
-        location = st.text_input("Локация (напр. Bulgaria, Remote, Sofia)", value=settings.search.location)
+        location = st.text_input("Локация (Основни сайтове)", value=settings.search.location, help="За LinkedIn, dev.bg, jobs.bg. Напр: Bulgaria, Sofia")
+        
+        remote_loc_opts = ["Worldwide", "European Union", "Europe", "UK", "USA"]
+        curr_rem_loc = getattr(settings.search, "remote_location", "Worldwide")
+        if curr_rem_loc not in remote_loc_opts:
+            remote_loc_opts.insert(0, curr_rem_loc)
+            
+        remote_location = st.selectbox(
+            "Локация (Remote сайтове)",
+            options=remote_loc_opts,
+            index=remote_loc_opts.index(curr_rem_loc),
+            help="Филтър за Remote платформите (Remotive, WeWorkRemotely)."
+        )
         
         max_jobs = st.slider(
             "Максимум обяви на сайт (за едно търсене)",
@@ -266,14 +288,33 @@ with tab_search:
         if st.button("💾 Запази параметрите", key="save_search_params"):
             settings.search.keywords = [k.strip() for k in keywords_text.split("\n") if k.strip()]
             settings.search.location = location
+            settings.search.remote_location = remote_location
             settings.search.max_jobs_per_source = max_jobs
             settings_mgr.save(settings)
             st.success("Параметрите са запазени!")
             
     with col2:
+        st.markdown("### 🌐 Източници за търсене")
+        st.markdown("**🇧🇬 Локални / Основни:**")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            use_devbg = st.checkbox("dev.bg", value=settings.sources.dev_bg, key="src_devbg")
+        with c2:
+            use_jobsbg = st.checkbox("jobs.bg", value=settings.sources.jobs_bg, key="src_jobsbg")
+        with c3:
+            use_linkedin = st.checkbox("LinkedIn", value=settings.sources.linkedin, key="src_link")
+            
+        st.markdown("**🌍 Глобални (100% Remote):**")
+        c4, c5, c6 = st.columns(3)
+        with c4:
+            use_himalayas = st.checkbox("Himalayas", value=settings.sources.himalayas, key="src_him")
+        with c5:
+            use_euremote = st.checkbox("EU Remote", value=settings.sources.euremotejobs, key="src_eur")
+        with c6:
+            use_hackernews = st.checkbox("HackerNews", value=settings.sources.hackernews, key="src_hn")
+            
+        st.markdown("---")
         st.markdown("### ▶️ Стартиране")
-        active_sources = settings_mgr.enabled_sources()
-        st.info(f"**Активни източници:** {', '.join(active_sources) if active_sources else 'Няма'}\n\n*(Можеш да ги промениш в таб ⚙️ Настройки)*")
         
         if settings_mgr.get_api_key_source() == "none":
             st.warning("⚠️ Не е конфигуриран Gemini API ключ. Оценките ще бъдат базови (евристични). Добави ключ в таб ⚙️ Настройки.")
@@ -287,10 +328,20 @@ with tab_search:
                 lock_file.unlink(missing_ok=True)
                 st.rerun()
         else:
-            if not active_sources:
+            has_sources = use_devbg or use_jobsbg or use_linkedin or use_himalayas or use_euremote or use_hackernews
+            if not has_sources:
                 st.error("Не са избрани източници за търсене!")
             else:
                 if st.button("▶️ Стартирай търсене сега", type="primary", use_container_width=True):
+                    # Save the latest source selections right before running
+                    settings.sources.dev_bg = use_devbg
+                    settings.sources.jobs_bg = use_jobsbg
+                    settings.sources.linkedin = use_linkedin
+                    settings.sources.himalayas = use_himalayas
+                    settings.sources.euremotejobs = use_euremote
+                    settings.sources.hackernews = use_hackernews
+                    settings_mgr.save(settings)
+                    
                     # We create a lock file
                     lock_file.touch()
                     
@@ -320,16 +371,38 @@ finally:
                     st.success("Търсенето започна във фонов режим! Можеш да следиш лога по-долу.")
                     st.rerun()
                     
-        # Show log if running
+        # Auto-refresh and Log display logic
+        log_file = Path("data/search.log")
+        
         if is_running:
-            log_file = Path("data/search.log")
-            if log_file.exists():
-                st.markdown("### Лог на изпълнението")
-                log_content = log_file.read_text(encoding="utf-8")
-                # get last 30 lines
-                log_lines = log_content.splitlines()[-30:]
-                st.code("\n".join(log_lines), language="text")
-                st.button("🔄 Обнови лога")
+            import streamlit.components.v1 as components
+            # This triggers a Streamlit rerun every 3 seconds while is_running is True
+            components.html(
+                """
+                <script>
+                setTimeout(function() {
+                    window.parent.document.dispatchEvent(new Event('streamlit:rerun'));
+                }, 3000);
+                </script>
+                """,
+                height=0
+            )
+            st.info("🔄 Търсенето се изпълнява във фонов режим. Логът се обновява автоматично...")
+        elif log_file.exists():
+            st.success("✅ Търсенето приключи! Можеш да видиш резултатите в таб 'Списък с обяви'.")
+            
+        if log_file.exists():
+            st.markdown("### Лог на изпълнението")
+            log_content = log_file.read_text(encoding="utf-8")
+            log_lines = log_content.splitlines()[-40:]
+            st.code("\n".join(log_lines), language="text")
+            
+            if is_running:
+                st.button("🔄 Ръчно обновяване")
+            else:
+                if st.button("🗑️ Скрий лога"):
+                    log_file.unlink(missing_ok=True)
+                    st.rerun()
 
         st.markdown("---")
         st.markdown("### 🔄 Проверка на активността (Рефреш)")
@@ -361,30 +434,34 @@ with tab2:
     Теорията на автоматичното управление, крайните автомати (**Finite State Machines**) и обратните връзки (**Feedback Loops**) са **ТОЧНО фундамента, върху който стъпват съвременните агентни графи (LangGraph, StateGraphs, Reflection Loops)**!
     """)
 
+    settings_mgr = SettingsManager()
+    settings = settings_mgr.load()
+    progress = settings.roadmap_progress
+
     st.markdown("### 📊 Твоят напредък по 3-те нива на специализация")
 
     col_s1, col_s2, col_s3 = st.columns(3)
 
     with col_s1:
         st.markdown("#### 🟢 Ниво 1: Foundation (Основи)")
-        s1 = st.checkbox("Prompt Eng & Context Strategy", value=True, key="sk_p1")
-        s2 = st.checkbox("AI Python & Pydantic Validation", value=True, key="sk_p2")
-        s3 = st.checkbox("Building Systems with LLM APIs", value=True, key="sk_p3")
-        s4 = st.checkbox("LangChain Chaining & Chat with Data", value=True, key="sk_p4")
+        s1 = st.checkbox("Prompt Eng & Context Strategy", value=progress.get("sk_p1", True), key="sk_p1")
+        s2 = st.checkbox("AI Python & Pydantic Validation", value=progress.get("sk_p2", True), key="sk_p2")
+        s3 = st.checkbox("Building Systems with LLM APIs", value=progress.get("sk_p3", True), key="sk_p3")
+        s4 = st.checkbox("LangChain Chaining & Chat with Data", value=progress.get("sk_p4", True), key="sk_p4")
 
     with col_s2:
         st.markdown("#### 🟡 Ниво 2: Core Track (Агентно Ядро)")
-        s5 = st.checkbox("4-те Модела на Andrew Ng (Reflection, Tools, Plan, Multi-Agent)", value=True, key="sk_p5")
-        s6 = st.checkbox("Function & Tool Calling в код", value=True, key="sk_p6")
-        s7 = st.checkbox("Multi-Agent екипи с CrewAI", value=False, key="sk_p7")
-        s8 = st.checkbox("Event-Driven & Human-in-the-Loop Flows", value=False, key="sk_p8")
+        s5 = st.checkbox("4-те Модела на Andrew Ng (Reflection, Tools, Plan, Multi-Agent)", value=progress.get("sk_p5", True), key="sk_p5")
+        s6 = st.checkbox("Function & Tool Calling в код", value=progress.get("sk_p6", True), key="sk_p6")
+        s7 = st.checkbox("Multi-Agent екипи с CrewAI", value=progress.get("sk_p7", False), key="sk_p7")
+        s8 = st.checkbox("Event-Driven & Human-in-the-Loop Flows", value=progress.get("sk_p8", False), key="sk_p8")
 
     with col_s3:
         st.markdown("#### 🔴 Ниво 3: Role Specialization (Agentic Systems)")
-        s9 = st.checkbox("Model Context Protocol (MCP) Сървъри", value=True, key="sk_p9")
-        s10 = st.checkbox("LangGraph StateGraphs & Дългосрочна Памет", value=False, key="sk_p10")
-        s11 = st.checkbox("Eval Harness (Оценка на точност & токени)", value=False, key="sk_p11")
-        s12 = st.checkbox("Advanced RAG & Unstructured Data Prep", value=False, key="sk_p12")
+        s9 = st.checkbox("Model Context Protocol (MCP) Сървъри", value=progress.get("sk_p9", True), key="sk_p9")
+        s10 = st.checkbox("LangGraph StateGraphs & Дългосрочна Памет", value=progress.get("sk_p10", False), key="sk_p10")
+        s11 = st.checkbox("Eval Harness (Оценка на точност & токени)", value=progress.get("sk_p11", False), key="sk_p11")
+        s12 = st.checkbox("Advanced RAG & Unstructured Data Prep", value=progress.get("sk_p12", False), key="sk_p12")
 
     all_skills = [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12]
     completed_skills = sum(1 for s in all_skills if s)
@@ -393,6 +470,16 @@ with tab2:
 
     st.progress(progress_ratio)
     st.markdown(f"**Текущ статус:** Усвоени **{completed_skills}** от **{total_skills}** ключови модула (**{int(progress_ratio * 100)}%**) 🚀")
+    
+    if st.button("💾 Запази прогреса", key="save_roadmap"):
+        settings.roadmap_progress = {
+            "sk_p1": s1, "sk_p2": s2, "sk_p3": s3, "sk_p4": s4,
+            "sk_p5": s5, "sk_p6": s6, "sk_p7": s7, "sk_p8": s8,
+            "sk_p9": s9, "sk_p10": s10, "sk_p11": s11, "sk_p12": s12
+        }
+        settings_mgr.save(settings)
+        st.success("Прогресът е запазен успешно!")
+        st.rerun()
 
     st.divider()
 
@@ -542,13 +629,19 @@ with tab_settings:
     settings = settings_mgr.load()
     
     st.markdown("### 🌐 Източници за търсене")
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         use_devbg = st.checkbox("dev.bg", value=settings.sources.dev_bg)
     with c2:
         use_jobsbg = st.checkbox("jobs.bg", value=settings.sources.jobs_bg)
     with c3:
         use_linkedin = st.checkbox("LinkedIn", value=settings.sources.linkedin)
+    with c4:
+        use_himalayas = st.checkbox("Himalayas", value=settings.sources.himalayas)
+    with c5:
+        use_euremote = st.checkbox("EU Remote", value=settings.sources.euremotejobs)
+    with c6:
+        use_hackernews = st.checkbox("HackerNews", value=settings.sources.hackernews)
         
     st.markdown("### 🧠 Google Gemini AI")
     api_source = settings_mgr.get_api_key_source()
@@ -590,8 +683,8 @@ with tab_settings:
     st.markdown("#### Модел")
     selected_model = st.selectbox(
         "Избери Gemini модел",
-        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"],
-        index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"] else 0
+        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity"],
+        index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity"] else 0
     )
     
     st.markdown("### 🚫 Черен списък (Blacklist)")
@@ -604,12 +697,15 @@ with tab_settings:
         settings.sources.dev_bg = use_devbg
         settings.sources.jobs_bg = use_jobsbg
         settings.sources.linkedin = use_linkedin
+        settings.sources.himalayas = use_himalayas
+        settings.sources.euremotejobs = use_euremote
+        settings.sources.hackernews = use_hackernews
         settings.ai.gemini_model = selected_model
         settings.blacklist_title = [k.strip() for k in bl_titles.split("\n") if k.strip()]
         settings.blacklist_companies = [k.strip() for k in bl_comps.split("\n") if k.strip()]
         
         # Validate sources
-        if not (use_devbg or use_jobsbg or use_linkedin):
+        if not (use_devbg or use_jobsbg or use_linkedin or use_himalayas or use_euremote or use_hackernews):
             st.error("Трябва да избереш поне един източник!")
         else:
             settings_mgr.save(settings)

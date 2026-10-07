@@ -68,6 +68,35 @@ class GeminiJobAnalyzer:
                 return False, "Моделът е претоварен (503). Ключът вероятно е валиден, опитай пак след малко."
             return False, f"Грешка: {msg[:200]}"
 
+    def _get_learned_skills(self) -> str:
+        from src.settings_manager import SettingsManager
+        sm = SettingsManager()
+        progress = sm.load().roadmap_progress
+        
+        roadmap_map = {
+            "sk_p1": "Prompt Eng & Context Strategy",
+            "sk_p2": "AI Python & Pydantic Validation",
+            "sk_p3": "Building Systems with LLM APIs",
+            "sk_p4": "LangChain Chaining & Chat with Data",
+            "sk_p5": "4-те Модела на Andrew Ng (Reflection, Tools, Plan, Multi-Agent)",
+            "sk_p6": "Function & Tool Calling в код",
+            "sk_p7": "Multi-Agent екипи с CrewAI",
+            "sk_p8": "Event-Driven & Human-in-the-Loop Flows",
+            "sk_p9": "Model Context Protocol (MCP) Сървъри",
+            "sk_p10": "LangGraph StateGraphs & Дългосрочна Памет",
+            "sk_p11": "Eval Harness (Оценка на точност & токени)",
+            "sk_p12": "Advanced RAG & Unstructured Data Prep"
+        }
+        
+        learned = []
+        for key, name in roadmap_map.items():
+            if progress.get(key, False):
+                learned.append(name)
+                
+        if not learned:
+            return "Кандидатът все още не е завършил нито един модул от Agentic AI пътеката."
+        return ", ".join(learned)
+
     def analyze_job(self, title: str, company: str, location: str, description: str) -> Dict[str, Any]:
         """
         Анализира обявата чрез Gemini. Ако липсва API ключ, използва евристичен фолбек.
@@ -76,6 +105,7 @@ class GeminiJobAnalyzer:
             return self._heuristic_fallback(title, description)
 
         candidate_info = json.dumps(self.profile.get("candidate", {}), ensure_ascii=False, indent=2)
+        learned_skills = self._get_learned_skills()
 
         prompt = f"""
 Ти си елитен технически кариерен консултант и Agentic AI архитект.
@@ -83,6 +113,10 @@ class GeminiJobAnalyzer:
 
 КАНДИДАТ (ПРОФИЛ И ЦЕЛИ):
 {candidate_info}
+
+УСПЕШНО ЗАВЪРШЕНИ КУРСОВЕ И УСВОЕНИ УМЕНИЯ ОТ КАНДИДАТА (от Skill Roadmap):
+{learned_skills}
+ВНИМАНИЕ: Кандидатът тепърва се преквалифицира. Неговият % мач (match_score) трябва да се базира на фундаменталните му инженерни умения и тези завършени AI курсове! Ако обявата изисква умения, които не са в списъка по-горе (дори да са споменати в целите), мачът трябва да бъде по-нисък.
 
 ОБЯВА ЗА РАБОТА:
 - Заглавие: {title}
@@ -159,6 +193,7 @@ class GeminiJobAnalyzer:
             }
 
         candidate_info = json.dumps(self.profile.get("candidate", {}), ensure_ascii=False, indent=2)
+        learned_skills = self._get_learned_skills()
 
         job_blocks = []
         for idx, j in enumerate(jobs, 1):
@@ -179,6 +214,10 @@ class GeminiJobAnalyzer:
 
 КАНДИДАТ (ПРОФИЛ И ЦЕЛИ):
 {candidate_info}
+
+УСПЕШНО ЗАВЪРШЕНИ КУРСОВЕ И УСВОЕНИ УМЕНИЯ ОТ КАНДИДАТА (от Skill Roadmap):
+{learned_skills}
+ВНИМАНИЕ: Кандидатът тепърва се преквалифицира. Неговият % мач (match_score) трябва да се базира на фундаменталните му инженерни умения и тези завършени AI курсове! Ако обявата изисква умения, които не са в списъка по-горе (дори да са споменати в целите), мачът трябва да бъде по-нисък.
 
 СПИСЪК С ОБЯВИ ЗА ПАКЕТНА ОЦЕНКА:
 {all_jobs_text}

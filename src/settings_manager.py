@@ -33,14 +33,17 @@ DEV_BG_CATEGORIES = {
 class SearchSettings(BaseModel):
     keywords: List[str] = Field(default_factory=lambda: ["AI Engineer", "Agentic", "LLM", "Generative AI"])
     location: str = "Bulgaria"
+    remote_location: str = "Worldwide"
     max_jobs_per_source: int = 15
     max_keywords_per_run: int = 4
-
 
 class SourceSettings(BaseModel):
     dev_bg: bool = True
     jobs_bg: bool = True
     linkedin: bool = True
+    himalayas: bool = True
+    euremotejobs: bool = True
+    hackernews: bool = True
     dev_bg_categories: List[str] = Field(default_factory=list)
 
 
@@ -55,7 +58,7 @@ class UserSettings(BaseModel):
     ai: AISettings = Field(default_factory=AISettings)
     blacklist_title: List[str] = Field(default_factory=list)
     blacklist_companies: List[str] = Field(default_factory=list)
-
+    roadmap_progress: dict = Field(default_factory=dict)
 
 class SettingsManager:
     def __init__(self, path: str = "data/user_settings.json"):
@@ -141,6 +144,12 @@ class SettingsManager:
             out.append("jobs.bg")
         if src.linkedin:
             out.append("linkedin")
+        if src.himalayas:
+            out.append("himalayas")
+        if src.euremotejobs:
+            out.append("euremotejobs")
+        if src.hackernews:
+            out.append("hackernews")
         return out
 
     @staticmethod

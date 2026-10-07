@@ -40,6 +40,9 @@ from src.browser import BrowserManager
 from src.scrapers.dev_bg import DevBgScraper
 from src.scrapers.jobs_bg import JobsBgScraper
 from src.scrapers.linkedin import LinkedInScraper
+from src.scrapers.himalayas import HimalayasScraper
+from src.scrapers.euremotejobs import EURemoteJobsScraper
+from src.scrapers.hackernews import HackerNewsScraper
 from src.intelligence.gemini_analyzer import GeminiJobAnalyzer
 from src.intelligence.market_insights import MarketInsightsGenerator
 from src.notifiers.discord import DiscordNotifier
@@ -228,6 +231,12 @@ def cmd_search(
         scrapers.append(JobsBgScraper(page))
     if "linkedin" in active_sources:
         scrapers.append(LinkedInScraper(page))
+    if "himalayas" in active_sources:
+        scrapers.append(HimalayasScraper(page))
+    if "euremotejobs" in active_sources:
+        scrapers.append(EURemoteJobsScraper(page))
+    if "hackernews" in active_sources:
+        scrapers.append(HackerNewsScraper(page))
 
     new_jobs_to_analyze = []
     new_jobs_added = 0
@@ -326,6 +335,8 @@ def cmd_search(
         playwright.stop()
 
     console.print(f"\n[bold green]✅ Готово! Добавени са {new_jobs_added} нови обяви в базата данни.[/bold green]")
+    console.print("\n[bold green]🏁 Търсенето приключи успешно![/bold green]")
+    
     if new_jobs_added > 0:
         console.print("💡 Можеш да прегледаш детайлите с: [cyan]python run.py --dashboard[/cyan]")
 

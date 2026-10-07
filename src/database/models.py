@@ -21,6 +21,9 @@ class JobSource(str, Enum):
     DEV_BG = "dev.bg"
     JOBS_BG = "jobs.bg"
     LINKEDIN = "linkedin"
+    HIMALAYAS = "himalayas"
+    EUREMOTE = "euremotejobs"
+    HACKERNEWS = "hackernews"
     OTHER = "other"
 
 

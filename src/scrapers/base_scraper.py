@@ -26,6 +26,7 @@ class BaseScraper(ABC):
         self.filters = load_filters()
         settings = SettingsManager().load()
         self.location = settings.search.location or "Bulgaria"
+        self.remote_location = getattr(settings.search, "remote_location", "Worldwide")
         self.dev_bg_categories = list(settings.sources.dev_bg_categories)
         self._base_blacklist_titles = list(settings.blacklist_title)
         self.blacklist_titles = [w.lower() for w in self._base_blacklist_titles]

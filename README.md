@@ -55,9 +55,16 @@ cp .env.example .env
 | `.\.venv\Scripts\python.exe run.py --insights` | Генерира пазарен доклад за търсените AI умения в София |
 | `.\.venv\Scripts\python.exe run.py --stats` | Показва кратка статистика в терминала |
 | `.\.venv\Scripts\python.exe run.py --login` | Отваря браузъра за ръчен вход / опресняване на бисквитките |
+| `.\.venv\Scripts\python.exe run.py --cleanup` | Проверява запазените обяви и премахва изтеклите/свалените |
 
 ### Допълнителни опции за търсене:
 ```bash
+# Изчистване на всички необработени ('New') обяви преди търсене
+.\.venv\Scripts\python.exe run.py --search --clear-new
+
+# Пълно изчистване на базата преди търсене
+.\.venv\Scripts\python.exe run.py --search --clear-all
+
 # Търсене само в dev.bg и jobs.bg
 .\.venv\Scripts\python.exe run.py --search --sources dev.bg jobs.bg
 

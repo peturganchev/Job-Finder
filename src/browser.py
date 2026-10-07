@@ -133,15 +133,20 @@ class BrowserManager:
         playwright, context, page = self.launch_session(headless=False)
 
         try:
-            print("🌐 Отваряне на LinkedIn...")
-            page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
+            print("🌐 Отваряне на Himalayas...")
+            page.goto("https://himalayas.app", wait_until="domcontentloaded")
+            time.sleep(2)
+            
+            print("🌐 Отваряне на LinkedIn в нов таб...")
+            li_page = context.new_page()
+            li_page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
             time.sleep(2)
 
             print("🌐 Отваряне на Jobs.bg в нов таб...")
             jobs_page = context.new_page()
             jobs_page.goto("https://www.jobs.bg/", wait_until="domcontentloaded")
 
-            input("\n👉 Натисни [ENTER] в терминала, след като си се логнал успешно и в двата сайта... ")
+            input("\n👉 Натисни [ENTER] в терминала, след като си минал Cloudflare/Login във всички сайтове... ")
 
             print("\n💾 Запазване на сесията и бисквитките...")
             context.close()
