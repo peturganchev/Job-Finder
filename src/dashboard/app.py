@@ -17,6 +17,7 @@ from src.database.models import ApplicationStatus
 from src.intelligence.gemini_analyzer import GeminiJobAnalyzer
 from src.intelligence.market_insights import MarketInsightsGenerator
 from src.settings_manager import SettingsManager
+from src.validator import JobValidator
 import subprocess
 
 st.set_page_config(
@@ -85,6 +86,16 @@ source_filter = st.sidebar.selectbox(
     index=0
 )
 
+# Филтър по ключова дума на търсене
+all_saved_keywords = repo.get_all_search_keywords()
+keyword_options = ["Всички"] + all_saved_keywords
+keyword_filter = st.sidebar.selectbox(
+    "🔑 Ключова дума (Позиция)",
+    options=keyword_options,
+    index=0,
+    help="Филтрира обявите според конкретното търсене, с което са били намерени."
+)
+
 min_score = st.sidebar.slider("🎯 Минимално AI съвпадение (%)", 0, 100, 30)
 
 st.sidebar.markdown("---")
@@ -115,12 +126,14 @@ tab1, tab_search, tab2, tab3, tab4, tab5, tab_settings = st.tabs([
 with tab1:
     selected_status = None if status_filter == "Всички" else status_filter
     selected_source = None if source_filter == "Всички" else source_filter
+    selected_kw = None if keyword_filter == "Всички" else keyword_filter
 
     jobs = repo.get_all_jobs(
         status=selected_status,
         min_score=min_score,
         source=selected_source,
-        limit=150
+        search_keyword=selected_kw,
+        limit=200
     )
 
     # Филтриране по обявена заплата
@@ -143,7 +156,25 @@ with tab1:
             if search_query.lower() in j.title.lower() or search_query.lower() in j.company.lower()
         ]
 
-    st.subheader(f"Намерени {len(jobs)} обяви")
+    col_h1, col_h2 = st.columns([3, 1])
+    with col_h1:
+        st.subheader(f"Намерени {len(jobs)} обяви")
+    with col_h2:
+        if st.button("🧹 Провери за изтекли", help="Обхожда показаните обяви и премахва тези, които са свалени или неактивни"):
+            with st.status("Проверка на активността на обявите...", expanded=True) as status_box:
+                validator = JobValidator()
+                progress_bar = st.progress(0.0)
+                def on_p(curr, tot, msg):
+                    progress_bar.progress(curr / tot)
+                    status_box.write(f"[{curr}/{tot}] {msg}")
+                res = validator.validate_and_cleanup(repo, jobs, on_progress=on_p)
+                status_box.update(label=f"✅ Готово! Премахнати {res['expired_count']} изтекли позиции.", state="complete")
+                if res['expired_count'] > 0:
+                    st.success(f"Премахнати {res['expired_count']} неактивни обяви!")
+                else:
+                    st.info("Всички проверени обяви са активни.")
+                time.sleep(1)
+                st.rerun()
 
     if not jobs:
         st.info("Няма обяви, отговарящи на избраните филтри. Опитай да намалиш минималния мач или изчисти филтъра за заплата.")
@@ -221,6 +252,17 @@ with tab_search:
             min_value=1, max_value=50, value=settings.search.max_jobs_per_source
         )
         
+        clean_choice = st.radio(
+            "🧹 Почистване преди търсене:",
+            options=[
+                "Запази всички съществуващи обяви",
+                "Изчисти само необработените ('New')",
+                "Изчисти абсолютно всички обяви (Пълен ресет)"
+            ],
+            index=0,
+            help="Позволява да изчистиш старите обяви при ново търсене, за да виждаш само новите резултати."
+        )
+
         if st.button("💾 Запази параметрите", key="save_search_params"):
             settings.search.keywords = [k.strip() for k in keywords_text.split("\n") if k.strip()]
             settings.search.location = location
@@ -252,18 +294,16 @@ with tab_search:
                     # We create a lock file
                     lock_file.touch()
                     
-                    # We run run.py --search in background
-                    # We will output to a log file
                     log_file = Path("data/search.log")
                     with open(log_file, "w", encoding="utf-8") as f:
                         f.write("Стартиране на търсенето...\n")
                     
                     cmd = [sys.executable, "run.py", "--search"]
+                    if clean_choice == "Изчисти само необработените ('New')":
+                        cmd.append("--clear-new")
+                    elif clean_choice == "Изчисти абсолютно всички обяви (Пълен ресет)":
+                        cmd.append("--clear-all")
                     
-                    # Note: Popen does not block
-                    # We wrap it in a script or just let run.py remove the lock file.
-                    # Wait, run.py doesn't know about the lock file. We can pass a wrapper script or create a small subprocess that runs run.py and then removes the lock file.
-                    # A small python script inline:
                     wrapper_script = f"""
 import subprocess
 import sys
@@ -289,9 +329,27 @@ finally:
                 # get last 30 lines
                 log_lines = log_content.splitlines()[-30:]
                 st.code("\n".join(log_lines), language="text")
-                
-                # Auto-refresh mechanism via st_autorefresh or just manual
                 st.button("🔄 Обнови лога")
+
+        st.markdown("---")
+        st.markdown("### 🔄 Проверка на активността (Рефреш)")
+        st.caption("Минава през всички събрани обяви в базата данни и автоматично премахва тези, които вече са свалени, изтекли или имат намерен човек.")
+        if st.button("🧹 Провери и премахни изтеклите обяви", key="btn_validate_tab_search"):
+            with st.status("Проверка на активността на обявите...", expanded=True) as status_box:
+                validator = JobValidator()
+                all_db_jobs = repo.get_all_jobs(limit=1000)
+                progress_bar = st.progress(0.0)
+                def on_p_ts(curr, tot, msg):
+                    progress_bar.progress(curr / tot)
+                    status_box.write(f"[{curr}/{tot}] {msg}")
+                res = validator.validate_and_cleanup(repo, all_db_jobs, on_progress=on_p_ts)
+                status_box.update(label=f"✅ Готово! Премахнати {res['expired_count']} изтекли позиции.", state="complete")
+                if res['expired_count'] > 0:
+                    st.success(f"Премахнати {res['expired_count']} неактивни обяви! Остават {res['active_count']} активни.")
+                else:
+                    st.info("Всички проверени обяви са активни.")
+                time.sleep(1)
+                st.rerun()
 
 with tab2:
     st.subheader("🗺️ Пътна карта за самоподготовка: Agentic Systems Developer")

@@ -129,7 +129,8 @@ class JobsBgScraper(BaseScraper):
                         location=location,
                         url=href,
                         salary=salary,
-                        status=ApplicationStatus.NEW
+                        status=ApplicationStatus.NEW,
+                        search_keyword=kw
                     )
                     found_jobs.append(job)
 

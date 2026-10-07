@@ -45,6 +45,7 @@ from src.intelligence.market_insights import MarketInsightsGenerator
 from src.notifiers.discord import DiscordNotifier
 from src.notifiers.telegram import TelegramNotifier
 from src.settings_manager import SettingsManager
+from src.validator import JobValidator
 
 
 def load_config() -> dict:
@@ -177,7 +178,13 @@ def cmd_reanalyze(all_jobs: bool = False):
     console.print("💡 Можеш да ги видиш в дашборда с: [cyan]python run.py --dashboard[/cyan]")
 
 
-def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
+def cmd_search(
+    sources: List[str],
+    headless: bool = False,
+    max_jobs: int = 15,
+    clear_new: bool = False,
+    clear_all: bool = False
+):
     """
     Основен пайплайн: Търсене -> Дедупликация -> AI Оценка -> Запис в SQLite -> Известия.
     """
@@ -185,6 +192,15 @@ def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
 
     settings_mgr = SettingsManager()
     settings = settings_mgr.load()
+
+    repo = JobRepository()
+
+    if clear_all:
+        cnt = repo.delete_all_jobs(only_new=False)
+        console.print(f"[yellow]🗑️ Изчистени всички {cnt} обяви от базата данни преди търсенето.[/yellow]")
+    elif clear_new:
+        cnt = repo.delete_all_jobs(only_new=True)
+        console.print(f"[yellow]🗑️ Изчистени {cnt} съществуващи обяви със статус 'New' преди търсенето.[/yellow]")
 
     cfg = load_config()
     min_score_for_alert = cfg.get("profile", {}).get("candidate", {}).get("min_match_score_for_alert", 60)
@@ -198,7 +214,6 @@ def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
     else:
         active_sources = settings_mgr.enabled_sources()
 
-    repo = JobRepository()
     analyzer = GeminiJobAnalyzer()
     discord = DiscordNotifier()
     telegram = TelegramNotifier()
@@ -315,6 +330,30 @@ def cmd_search(sources: List[str], headless: bool = False, max_jobs: int = 15):
         console.print("💡 Можеш да прегледаш детайлите с: [cyan]python run.py --dashboard[/cyan]")
 
 
+def cmd_cleanup():
+    """Проверява всички обяви в базата данни и изтрива неактивните/изтеклите."""
+    console.print(Panel.fit("[bold magenta]🧹 Проверка на активността на обявите в базата данни...[/bold magenta]"))
+    repo = JobRepository()
+    validator = JobValidator()
+
+    def on_prog(current, total, msg):
+        console.print(f"[{current}/{total}] {msg}")
+
+    report = validator.validate_and_cleanup(repo, on_progress=on_prog)
+
+    console.print(Panel.fit(
+        f"[bold green]✅ Готово![/bold green]\n"
+        f"📊 Проверени: [cyan]{report['total_checked']}[/cyan] | "
+        f"Остават активни: [green]{report['active_count']}[/green] | "
+        f"Премахнати изтекли: [red]{report['expired_count']}[/red]"
+    ))
+
+    if report["removed_jobs"]:
+        console.print("\n[bold red]Премахнати неактивни обяви:[/bold red]")
+        for r in report["removed_jobs"]:
+            console.print(f"   ❌ [bold]{r['title']}[/bold] @ {r['company']} ({r['source']}) — [yellow]{r['reason']}[/yellow]")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Job Finder & Market Intelligence CLI")
     parser.add_argument("--search", action="store_true", help="Стартира търсенето за нови обяви")
@@ -324,6 +363,9 @@ def main():
     parser.add_argument("--stats", action="store_true", help="Показва статистика за базата данни")
     parser.add_argument("--reanalyze", action="store_true", help="Пуска бълк Gemini анализ за обявите в базата")
     parser.add_argument("--all", action="store_true", help="Преоценява абсолютно всички обяви в базата с обновения профил")
+    parser.add_argument("--cleanup", action="store_true", help="Проверява дали запазените обяви са още активни и премахва изтеклите")
+    parser.add_argument("--clear-new", action="store_true", help="Изчиства обявите със статус 'new' преди търсене")
+    parser.add_argument("--clear-all", action="store_true", help="Изчиства абсолютно всички обяви от базата преди търсене")
     parser.add_argument("--sources", nargs="+", default=["all"], help="Източници (dev.bg, jobs.bg, linkedin или all)")
     parser.add_argument("--headless", action="store_true", help="Пуска браузъра в скрит режим")
     parser.add_argument("--max-jobs", type=int, default=15, help="Максимален брой обяви на източник за едно пускане")
@@ -340,8 +382,16 @@ def main():
         cmd_stats()
     elif args.reanalyze:
         cmd_reanalyze(all_jobs=args.all)
+    elif args.cleanup:
+        cmd_cleanup()
     elif args.search:
-        cmd_search(sources=args.sources, headless=args.headless, max_jobs=args.max_jobs)
+        cmd_search(
+            sources=args.sources,
+            headless=args.headless,
+            max_jobs=args.max_jobs,
+            clear_new=args.clear_new,
+            clear_all=args.clear_all
+        )
     else:
         parser.print_help()
 

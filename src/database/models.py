@@ -37,6 +37,7 @@ class Job(BaseModel):
     description: str = ""
     scraped_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     status: ApplicationStatus = ApplicationStatus.NEW
+    search_keyword: Optional[str] = None
 
     # AI анализ от Google Gemini
     match_score: Optional[int] = None

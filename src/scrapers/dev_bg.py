@@ -114,7 +114,8 @@ class DevBgScraper(BaseScraper):
                         url=url,
                         salary=salary,
                         posted_date=posted_date,
-                        status=ApplicationStatus.NEW
+                        status=ApplicationStatus.NEW,
+                        search_keyword=kw
                     )
                     found_jobs.append(job)
 

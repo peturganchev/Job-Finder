@@ -45,9 +45,16 @@ class JobRepository:
                     missing_skills TEXT,
                     cover_letter TEXT,
                     notified INTEGER NOT NULL DEFAULT 0,
-                    notified_at TEXT
+                    notified_at TEXT,
+                    search_keyword TEXT
                 )
             """)
+
+            # Автоматична миграция при съществуваща база
+            cursor.execute("PRAGMA table_info(jobs)")
+            cols = [col["name"] for col in cursor.fetchall()]
+            if "search_keyword" not in cols:
+                cursor.execute("ALTER TABLE jobs ADD COLUMN search_keyword TEXT")
 
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_jobs_url ON jobs (url);
@@ -60,6 +67,9 @@ class JobRepository:
             """)
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_jobs_score ON jobs (match_score);
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_jobs_keyword ON jobs (search_keyword);
             """)
             conn.commit()
 
@@ -85,8 +95,8 @@ class JobRepository:
                     source, job_id, title, company, location, url, salary,
                     posted_date, description, scraped_at, status, match_score,
                     ai_summary, matched_skills, missing_skills, cover_letter,
-                    notified, notified_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    notified, notified_at, search_keyword
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 job.source,
                 job.job_id,
@@ -105,7 +115,8 @@ class JobRepository:
                 json.dumps(job.missing_skills or [], ensure_ascii=False),
                 job.cover_letter,
                 1 if job.notified else 0,
-                job.notified_at
+                job.notified_at,
+                job.search_keyword
             ))
             conn.commit()
             return cursor.lastrowid
@@ -213,6 +224,7 @@ class JobRepository:
         status: Optional[str] = None,
         min_score: Optional[int] = None,
         source: Optional[str] = None,
+        search_keyword: Optional[str] = None,
         limit: int = 200
     ) -> List[Job]:
         """Извлича обяви за дашборда с опционални филтри."""
@@ -228,6 +240,9 @@ class JobRepository:
         if source:
             query += " AND source = ?"
             params.append(source)
+        if search_keyword and search_keyword != "Всички":
+            query += " AND search_keyword = ?"
+            params.append(search_keyword)
 
         query += " ORDER BY match_score DESC NULLS LAST, id DESC LIMIT ?"
         params.append(limit)
@@ -236,6 +251,41 @@ class JobRepository:
             cursor = conn.cursor()
             cursor.execute(query, params)
             return [self._row_to_job(row) for row in cursor.fetchall()]
+
+    def get_all_search_keywords(self) -> List[str]:
+        """Връща списък от всички уникални ключови думи, по които са открити обяви."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT DISTINCT search_keyword 
+                FROM jobs 
+                WHERE search_keyword IS NOT NULL AND search_keyword != '' 
+                ORDER BY search_keyword ASC
+            """)
+            return [row[0] for row in cursor.fetchall()]
+
+    def delete_job(self, job_id: int) -> bool:
+        """Изтрива единична обява по ID."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_all_jobs(self, only_new: bool = True) -> int:
+        """
+        Изчиства обявите от базата.
+        Ако only_new=True, изтрива само тези със статус 'new' (запазва подадените CV-та и интервютата).
+        Ако only_new=False, прави пълен ресет на таблицата.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if only_new:
+                cursor.execute("DELETE FROM jobs WHERE status = 'new'")
+            else:
+                cursor.execute("DELETE FROM jobs")
+            conn.commit()
+            return cursor.rowcount
 
     def get_stats(self) -> Dict[str, Any]:
         """Връща статистика за събраните обяви."""
@@ -317,5 +367,6 @@ class JobRepository:
             missing_skills=missing,
             cover_letter=row["cover_letter"],
             notified=bool(row["notified"]),
-            notified_at=row["notified_at"]
+            notified_at=row["notified_at"],
+            search_keyword=row["search_keyword"] if "search_keyword" in row.keys() else None
         )
