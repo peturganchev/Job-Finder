@@ -13,11 +13,19 @@ from src.database.models import Job, JobSource, ApplicationStatus
 
 
 class JobsBgScraper(BaseScraper):
-    def __init__(self, page):
+    def __init__(self, page=None):
         super().__init__(page, name="jobs.bg")
+        import httpx
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+            "Accept-Language": "bg,en-US;q=0.9,en;q=0.8"
+        }
+        self.client = httpx.Client(headers=self.headers, follow_redirects=True, timeout=15.0)
 
     def _wait_for_cloudflare(self, timeout_sec: int = 15):
         """Проверява и изчаква автоматичното преминаване на Cloudflare верификацията."""
+        if not self.page:
+            return True
         start = time.time()
         while time.time() - start < timeout_sec:
             title = self.page.title()
@@ -43,16 +51,20 @@ class JobsBgScraper(BaseScraper):
 
             try:
                 print(f"🔍 [jobs.bg] Търсене за '{kw}': {search_url}")
-                self.page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
-                self._wait_for_cloudflare()
-                time.sleep(random.uniform(1.5, 3.0))
-
-                # Скролваме леко за динамично зареждане
-                for _ in range(2):
-                    self.page.mouse.wheel(0, 400)
-                    time.sleep(0.5)
-
-                html = self.page.content()
+                if self.page:
+                    self.page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
+                    self._wait_for_cloudflare()
+                    time.sleep(random.uniform(1.5, 3.0))
+                    for _ in range(2):
+                        self.page.mouse.wheel(0, 400)
+                        time.sleep(0.5)
+                    html = self.page.content()
+                else:
+                    resp = self.client.get(search_url)
+                    if resp.status_code != 200 or "Just a moment" in resp.text:
+                        print("ℹ️ [jobs.bg] Изисква браузър за преминаване на проверката.")
+                        continue
+                    html = resp.text
                 soup = BeautifulSoup(html, "html.parser")
 
                 # Търсим линкове към обяви (формат: /job/1234567 или job/...)
@@ -143,11 +155,17 @@ class JobsBgScraper(BaseScraper):
     def extract_job_details(self, job_url: str) -> dict:
         """Извлича пълния текст на обявата от jobs.bg."""
         try:
-            self.page.goto(job_url, wait_until="domcontentloaded", timeout=20000)
-            self._wait_for_cloudflare()
-            time.sleep(random.uniform(1.0, 2.0))
+            if self.page:
+                self.page.goto(job_url, wait_until="domcontentloaded", timeout=20000)
+                self._wait_for_cloudflare()
+                time.sleep(random.uniform(1.0, 2.0))
+                html = self.page.content()
+            else:
+                resp = self.client.get(job_url)
+                if resp.status_code != 200:
+                    return {"description": "", "posted_date": None, "salary": None}
+                html = resp.text
 
-            html = self.page.content()
             soup = BeautifulSoup(html, "html.parser")
 
             # В jobs.bg описанието обикновено е в главния контейнер с текст или таблица

@@ -2,7 +2,7 @@
 Data models for Job Finder.
 """
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,7 @@ class JobSource(str, Enum):
 
 
 class Job(BaseModel):
-    id: Optional[int] = None
+    id: Optional[Union[int, str]] = None
     source: str = JobSource.OTHER
     job_id: str  # Външен идентификатор или хеш на URL
     title: str

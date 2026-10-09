@@ -7,7 +7,10 @@ import json
 import os
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from dotenv import load_dotenv
 from src.database.models import Job, ApplicationStatus
+
+load_dotenv()
 
 
 class JobRepository:
@@ -370,3 +373,20 @@ class JobRepository:
             notified_at=row["notified_at"],
             search_keyword=row["search_keyword"] if "search_keyword" in row.keys() else None
         )
+
+
+def get_repository(user_id: Optional[str] = None):
+    """
+    Фабрична функция за зареждане на правилното хранилище:
+    Ако SUPABASE_URL и SUPABASE_KEY са налични в средата, ползва SupabaseRepository.
+    В противен случай работи с локален SQLite (JobRepository).
+    """
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
+    if supabase_url and supabase_key:
+        try:
+            from src.database.supabase_repo import SupabaseRepository
+            return SupabaseRepository(supabase_url=supabase_url, supabase_key=supabase_key, user_id=user_id)
+        except Exception as e:
+            print(f"⚠️ Грешка при връзка със Supabase: {e}. Превключване към SQLite.")
+    return JobRepository()

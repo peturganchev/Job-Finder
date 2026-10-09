@@ -33,3 +33,7 @@ Desktop.ini
 
 # Streamlit config / cache
 .streamlit/
+
+# Local backup & downloads
+_backup_local_version/
+downloaded_files/

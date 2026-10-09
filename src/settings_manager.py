@@ -41,7 +41,7 @@ class SourceSettings(BaseModel):
     dev_bg: bool = True
     jobs_bg: bool = True
     linkedin: bool = True
-    himalayas: bool = True
+    himalayas: bool = False
     euremotejobs: bool = True
     hackernews: bool = True
     dev_bg_categories: List[str] = Field(default_factory=list)

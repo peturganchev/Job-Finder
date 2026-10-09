@@ -12,12 +12,20 @@ import os
 # Добавяне на главната директория към пътя за импорти
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
-from src.database.repository import JobRepository
+from src.database.repository import get_repository
 from src.database.models import ApplicationStatus
 from src.intelligence.gemini_analyzer import GeminiJobAnalyzer
 from src.intelligence.market_insights import MarketInsightsGenerator
 from src.settings_manager import SettingsManager
 from src.validator import JobValidator
+from src.auth import (
+    is_auth_enabled,
+    get_current_user,
+    render_auth_view,
+    sign_out_user,
+    load_user_profile,
+    save_user_profile
+)
 import subprocess
 
 st.set_page_config(
@@ -27,12 +35,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Инициализиране на компонентите
-def get_repo():
-    return JobRepository()
+# Проверка за автентикация (ако Supabase е активен)
+current_user = None
+user_profile = {}
+if is_auth_enabled():
+    current_user = get_current_user()
+    if not current_user:
+        render_auth_view()
+        st.stop()
+    user_profile = load_user_profile(current_user["id"])
 
-repo = get_repo()
-analyzer = GeminiJobAnalyzer()
+# Инициализиране на хранилището (за текущия потребител)
+repo = get_repository(user_id=current_user["id"] if current_user else None)
+
+# Личен API ключ на потребителя за Gemini
+user_gemini_key = user_profile.get("gemini_api_key") if current_user else None
+user_gemini_model = user_profile.get("gemini_model") if current_user else None
+
+analyzer = GeminiJobAnalyzer(api_key=user_gemini_key, model_name=user_gemini_model)
 insights_gen = MarketInsightsGenerator(repo, analyzer)
 
 # Заглавие
@@ -70,7 +90,13 @@ def extract_salary_num(salary_str: Optional[str]) -> Optional[int]:
         return max(int(n) for n in nums)
     return None
 
-# Страничен панел с филтри
+# Страничен панел с профил и филтри
+if current_user:
+    st.sidebar.markdown(f"👤 **{current_user.get('email')}**")
+    if st.sidebar.button("🚪 Изход от профила", use_container_width=True):
+        sign_out_user()
+    st.sidebar.markdown("---")
+
 st.sidebar.header("🔍 Филтри")
 
 status_filter = st.sidebar.selectbox(
@@ -654,7 +680,8 @@ with tab_settings:
         
     st.caption(f"Статус на ключа: {source_msg}")
     
-    current_masked = settings_mgr.mask_key(settings_mgr.get_api_key())
+    current_key = (user_profile.get("gemini_api_key") if current_user else None) or settings_mgr.get_api_key()
+    current_masked = settings_mgr.mask_key(current_key)
     
     new_key = st.text_input("Gemini API Key (Google AI Studio)", value="", type="password", placeholder=f"Текущ: {current_masked}")
     st.markdown("[Вземи безплатен ключ от Google AI Studio](https://aistudio.google.com/)")
@@ -662,18 +689,23 @@ with tab_settings:
     col_ai1, col_ai2, col_ai3 = st.columns([1, 1, 2])
     with col_ai1:
         if st.button("💾 Запази ключ"):
+            if current_user:
+                save_user_profile(current_user["id"], {"gemini_api_key": new_key})
             settings_mgr.set_api_key(new_key)
             st.success("Ключът е запазен!")
             st.rerun()
     with col_ai2:
         if st.button("🗑️ Изтрий ключ"):
+            if current_user:
+                save_user_profile(current_user["id"], {"gemini_api_key": None})
             settings_mgr.set_api_key(None)
             st.success("Ключът е изтрит от настройките.")
             st.rerun()
     with col_ai3:
         if st.button("🧪 Тествай връзката"):
             with st.spinner("Тестване на Gemini API..."):
-                analyzer = GeminiJobAnalyzer()
+                active_k = new_key or current_key
+                analyzer = GeminiJobAnalyzer(api_key=active_k)
                 success, msg = analyzer.test_connection()
                 if success:
                     st.success(f"Успех! {msg}")
@@ -709,5 +741,11 @@ with tab_settings:
             st.error("Трябва да избереш поне един източник!")
         else:
             settings_mgr.save(settings)
+            if current_user:
+                save_user_profile(current_user["id"], {
+                    "gemini_model": selected_model,
+                    "blacklist_titles": settings.blacklist_title,
+                    "blacklist_companies": settings.blacklist_companies
+                })
             st.success("Всички настройки са запазени!")
             st.rerun()

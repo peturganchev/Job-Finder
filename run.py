@@ -35,7 +35,7 @@ from rich.panel import Panel
 load_dotenv()
 console = Console()
 
-from src.database.repository import JobRepository
+from src.database.repository import get_repository, JobRepository
 from src.browser import BrowserManager
 from src.scrapers.dev_bg import DevBgScraper
 from src.scrapers.jobs_bg import JobsBgScraper
@@ -196,7 +196,7 @@ def cmd_search(
     settings_mgr = SettingsManager()
     settings = settings_mgr.load()
 
-    repo = JobRepository()
+    repo = get_repository()
 
     if clear_all:
         cnt = repo.delete_all_jobs(only_new=False)
@@ -209,7 +209,6 @@ def cmd_search(
     min_score_for_alert = cfg.get("profile", {}).get("candidate", {}).get("min_match_score_for_alert", 60)
 
     keywords = settings.search.keywords
-    # Ако max_jobs е по подразбиране 15, ползваме това от настройките. Иначе от CLI.
     actual_max_jobs = max_jobs if max_jobs != 15 else settings.search.max_jobs_per_source
 
     if sources != ["all"]:
@@ -222,7 +221,12 @@ def cmd_search(
     telegram = TelegramNotifier()
     browser_mgr = BrowserManager(headless=headless)
 
-    playwright, context, page = browser_mgr.launch_session(headless=headless)
+    playwright, context, page = None, None, None
+    if "jobs.bg" in active_sources or "himalayas" in active_sources:
+        try:
+            playwright, context, page = browser_mgr.launch_session(headless=headless)
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Браузърът не е наличен ({e}). Използване на директен HTTP режим.[/yellow]")
 
     scrapers = []
     if "dev.bg" in active_sources:
@@ -231,12 +235,12 @@ def cmd_search(
         scrapers.append(JobsBgScraper(page))
     if "linkedin" in active_sources:
         scrapers.append(LinkedInScraper(page))
-    if "himalayas" in active_sources:
-        scrapers.append(HimalayasScraper(page))
     if "euremotejobs" in active_sources:
         scrapers.append(EURemoteJobsScraper(page))
     if "hackernews" in active_sources:
         scrapers.append(HackerNewsScraper(page))
+    if "himalayas" in active_sources and page is not None:
+        scrapers.append(HimalayasScraper(page))
 
     new_jobs_to_analyze = []
     new_jobs_added = 0
@@ -331,8 +335,16 @@ def cmd_search(
                             repo.mark_as_notified(job.id)
 
     finally:
-        context.close()
-        playwright.stop()
+        if context:
+            try:
+                context.close()
+            except Exception:
+                pass
+        if playwright:
+            try:
+                playwright.stop()
+            except Exception:
+                pass
 
     console.print(f"\n[bold green]✅ Готово! Добавени са {new_jobs_added} нови обяви в базата данни.[/bold green]")
     console.print("\n[bold green]🏁 Търсенето приключи успешно![/bold green]")
