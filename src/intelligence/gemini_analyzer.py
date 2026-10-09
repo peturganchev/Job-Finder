@@ -29,12 +29,12 @@ def load_profile() -> dict:
 
 
 class GeminiJobAnalyzer:
-    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None, profile_data: Optional[Dict[str, Any]] = None):
         from src.settings_manager import SettingsManager
         sm = SettingsManager()
         self.api_key = api_key or sm.get_api_key()
         self.model_name = model_name or sm.load().ai.gemini_model or "gemini-3.5-flash"
-        self.profile = load_profile()
+        self.profile = profile_data or load_profile()
         self.client = None
 
         if self.api_key and genai:
@@ -104,7 +104,8 @@ class GeminiJobAnalyzer:
         if not self.is_configured():
             return self._heuristic_fallback(title, description)
 
-        candidate_info = json.dumps(self.profile.get("candidate", {}), ensure_ascii=False, indent=2)
+        profile_dict = self.profile if "name" in self.profile else self.profile.get("candidate", {})
+        candidate_info = json.dumps(profile_dict, ensure_ascii=False, indent=2)
         learned_skills = self._get_learned_skills()
 
         prompt = f"""
@@ -192,7 +193,8 @@ class GeminiJobAnalyzer:
                 for j in jobs
             }
 
-        candidate_info = json.dumps(self.profile.get("candidate", {}), ensure_ascii=False, indent=2)
+        profile_dict = self.profile if "name" in self.profile else self.profile.get("candidate", {})
+        candidate_info = json.dumps(profile_dict, ensure_ascii=False, indent=2)
         learned_skills = self._get_learned_skills()
 
         job_blocks = []
@@ -290,7 +292,8 @@ class GeminiJobAnalyzer:
         if not self.is_configured():
             return "Необходим е GEMINI_API_KEY за генериране на пълно мотивационно писмо."
 
-        candidate_info = json.dumps(self.profile.get("candidate", {}), ensure_ascii=False, indent=2)
+        profile_dict = self.profile if "name" in self.profile else self.profile.get("candidate", {})
+        candidate_info = json.dumps(profile_dict, ensure_ascii=False, indent=2)
 
         prompt = f"""
 Напиши силно, професионално и модерно мотивационно писмо за позицията '{title}' в '{company}'.

@@ -11,3 +11,5 @@ rich>=13.7.0
 supabase>=2.3.0
 
 streamlit-cookies-controller>=0.0.4
+
+pypdf>=4.1.0

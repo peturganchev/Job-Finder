@@ -71,11 +71,16 @@ if is_auth_enabled():
 # Инициализиране на хранилището (за текущия потребител)
 repo = get_repository(user_id=current_user["id"] if current_user else None)
 
-# Личен API ключ на потребителя за Gemini
+# Личен API ключ и настройки на потребителя за Gemini
 user_gemini_key = user_profile.get("gemini_api_key") if current_user else None
 user_gemini_model = user_profile.get("gemini_model") if current_user else None
+user_profile_data = user_profile.get("profile_data") if current_user else None
 
-analyzer = GeminiJobAnalyzer(api_key=user_gemini_key, model_name=user_gemini_model)
+analyzer = GeminiJobAnalyzer(
+    api_key=user_gemini_key, 
+    model_name=user_gemini_model,
+    profile_data=user_profile_data
+)
 insights_gen = MarketInsightsGenerator(repo, analyzer)
 
 # Заглавие
@@ -678,21 +683,90 @@ with tab4:
             st.info("Все още няма генериран отчет. Натисни бутона по-горе за да създадеш първия отчет!")
 
 with tab5:
-    st.subheader("👤 Твоят профил & CV (Петър Ганчев)")
-    st.markdown("""
-    * **Име:** Петър Ганчев (Petur Ganchev)
-    * **Контакти:** `peturganchev93@gmail.com` | [LinkedIn Профил](https://www.linkedin.com/in/petur-ganchev)
-    * **Текуща позиция:** Senior Survey Programmer @ **Dynata** (8+ години корпоративен опит)
-    * **Образование:** Бакалавър по **Мехатроника, Роботика и Автоматизация** (Технически Университет - Варна)
-    * **Цел:** Преквалификация към **Agentic AI Engineer**
-    """)
+    st.subheader("👤 Твоят профил & CV")
+    
+    # Initialization of current profile
+    current_profile = user_profile.get("profile_data") if current_user else {}
+    if not current_profile:
+        # Fallback for old users
+        profile_path = Path("config/profile.yaml")
+        if profile_path.exists():
+            import yaml
+            with open(profile_path, "r", encoding="utf-8") as f:
+                legacy_prof = yaml.safe_load(f)
+                current_profile = legacy_prof.get("candidate", {})
 
-    st.markdown("### 📄 Пълен конфигурационен файл (config/profile.yaml)")
-    profile_path = Path("config/profile.yaml")
-    if profile_path.exists():
-        with open(profile_path, "r", encoding="utf-8") as f:
-            st.code(f.read(), language="yaml")
-    st.caption("Този файл се използва автоматично от Google Gemini за персонализирана оценка на обявите и генериране на мотивационни писма.")
+    st.markdown("### 📥 Импорт от CV (PDF)")
+    st.caption("Качи своето CV, за да го парснем автоматично чрез AI. Това ще попълни полетата по-долу.")
+    
+    uploaded_file = st.file_uploader("Качи CV (.pdf)", type=["pdf"])
+    
+    if uploaded_file and st.button("🪄 Анализирай CV-то с AI"):
+        if not user_gemini_key:
+            st.error("За да използваш AI парсването, трябва да имаш въведен Gemini API Key в настройките.")
+        else:
+            with st.spinner("🧠 AI чете и анализира твоето CV..."):
+                import PyPDF2
+                from src.intelligence.cv_parser import CVAIExtractor
+                
+                # Extract text
+                pdf_reader = PyPDF2.PdfReader(uploaded_file)
+                cv_text = ""
+                for page in pdf_reader.pages:
+                    cv_text += page.extract_text() + "\n"
+                
+                # Parse
+                extractor = CVAIExtractor(api_key=user_gemini_key)
+                structured_cv = extractor.parse_cv(cv_text)
+                
+                if structured_cv:
+                    st.session_state["draft_profile"] = structured_cv
+                    st.success("CV-то е успешно парснато! Прегледай данните по-долу и запази.")
+                else:
+                    st.error("Грешка при парсването. Опитай отново.")
+
+    st.divider()
+    st.markdown("### ✍️ Преглед и редакция на профила")
+    
+    # Merge session state draft with current database profile
+    edit_profile = st.session_state.get("draft_profile", current_profile)
+    
+    with st.form("profile_form"):
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            p_name = st.text_input("Пълно име", value=edit_profile.get("name", ""))
+            p_title = st.text_input("Текуща/Желана Позиция", value=edit_profile.get("title", ""))
+            p_exp = st.number_input("Години опит", value=int(edit_profile.get("experience_years", 0)), min_value=0, max_value=50)
+            
+        with col_p2:
+            p_summary = st.text_area("Обобщение (Summary)", value=edit_profile.get("summary", ""), height=150)
+            
+        p_roles = st.text_input("Желани роли (раздели със запетая)", value=", ".join(edit_profile.get("target_roles", [])))
+        p_skills = st.text_area("Ключови умения (раздели със запетая)", value=", ".join(edit_profile.get("core_skills", [])))
+        p_langs = st.text_input("Езици (раздели със запетая)", value=", ".join(edit_profile.get("languages", [])))
+        
+        submitted = st.form_submit_button("💾 Запази профила в базата")
+        
+        if submitted:
+            final_data = {
+                "name": p_name,
+                "title": p_title,
+                "experience_years": p_exp,
+                "summary": p_summary,
+                "target_roles": [r.strip() for r in p_roles.split(",") if r.strip()],
+                "core_skills": [s.strip() for s in p_skills.split(",") if s.strip()],
+                "languages": [l.strip() for l in p_langs.split(",") if l.strip()]
+            }
+            if current_user:
+                save_user_profile(current_user["id"], {"profile_data": final_data})
+                # Clear draft so it doesn't override future visits unnecessarily
+                if "draft_profile" in st.session_state:
+                    del st.session_state["draft_profile"]
+                st.success("Профилът ти е запазен успешно и ще се ползва за всички бъдещи анализи!")
+                import time; time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Трябва да си влязъл в профила си, за да запазваш.")
 
 with tab_settings:
     st.subheader("⚙️ Настройки на системата")
