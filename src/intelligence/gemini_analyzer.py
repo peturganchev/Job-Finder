@@ -4,11 +4,13 @@ Analyzes job descriptions against the candidate's Agentic AI profile,
 calculates match score, extracts missing skills, and generates tailored cover letters.
 """
 import os
+import re
 import json
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Literal
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
@@ -18,6 +20,73 @@ try:
 except ImportError:
     genai = None
     types = None
+
+
+class JobMatchSchema(BaseModel):
+    match_score: int = Field(description="Match score from 0 to 100 indicating suitability for candidate goals")
+    ai_summary: str = Field(description="Summary of the position and responsibilities")
+    matched_skills: List[str] = Field(description="List of matched candidate skills")
+    missing_skills: List[str] = Field(description="List of missing skills required by the job")
+    recommendation: Literal["apply", "save_for_learning", "skip"] = Field(
+        default="save_for_learning",
+        description="'apply', 'save_for_learning', or 'skip'"
+    )
+    cover_letter_intro: str = Field(description="Short customized cover letter introduction")
+
+
+def is_agent_model(model_name: Optional[str]) -> bool:
+    """Returns True if the model name is an agent model that requires Interactions API."""
+    if not model_name:
+        return False
+    lower = model_name.lower().strip()
+    return "antigravity" in lower or "agent" in lower
+
+
+def _clean_json_text(text: str) -> str:
+    """Cleans potential markdown code blocks and surrounding commentary from model JSON output."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    # Extract from markdown code fence if present
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
+    if fence_match:
+        cleaned = fence_match.group(1).strip()
+    # If not starting directly with JSON delimiter { or [, locate outer boundary
+    if not (cleaned.startswith("{") or cleaned.startswith("[")):
+        obj_start = cleaned.find("{")
+        arr_start = cleaned.find("[")
+        if obj_start != -1 and (arr_start == -1 or obj_start < arr_start):
+            obj_end = cleaned.rfind("}")
+            if obj_end != -1:
+                cleaned = cleaned[obj_start:obj_end + 1].strip()
+        elif arr_start != -1:
+            arr_end = cleaned.rfind("]")
+            if arr_end != -1:
+                cleaned = cleaned[arr_start:arr_end + 1].strip()
+    return cleaned
+
+
+def _extract_interaction_text(response: Any) -> str:
+    """Safely extracts output text from an Interactions API response or step list."""
+    if not response:
+        return ""
+    text = getattr(response, "output_text", None)
+    if text:
+        return text
+    steps = getattr(response, "steps", None) or []
+    parts = []
+    for step in steps:
+        step_type = getattr(step, "type", None) or (step.get("type") if isinstance(step, dict) else None)
+        if step_type == "model_output":
+            content = getattr(step, "content", None) or (step.get("content") if isinstance(step, dict) else None)
+            if isinstance(content, list):
+                for item in content:
+                    item_type = getattr(item, "type", None) or (item.get("type") if isinstance(item, dict) else None)
+                    if item_type == "text":
+                        item_text = getattr(item, "text", "") or (item.get("text", "") if isinstance(item, dict) else "")
+                        if item_text:
+                            parts.append(item_text)
+    return "".join(parts)
 
 
 def load_profile() -> dict:
@@ -33,7 +102,7 @@ class GeminiJobAnalyzer:
         from src.settings_manager import SettingsManager
         sm = SettingsManager()
         self.api_key = api_key or sm.get_api_key()
-        self.model_name = model_name or sm.load().ai.gemini_model or "gemini-3.5-flash"
+        self.model_name = (model_name or sm.load().ai.gemini_model or "gemini-3.5-flash").strip()
         self.profile = profile_data or load_profile()
         self.client = None
 
@@ -46,6 +115,9 @@ class GeminiJobAnalyzer:
     def is_configured(self) -> bool:
         return bool(self.client and self.api_key)
 
+    def is_agent_model(self, model_name: Optional[str] = None) -> bool:
+        return is_agent_model(model_name if model_name is not None else self.model_name)
+
     def test_connection(self) -> tuple:
         """Прави една минимална заявка. Връща (успех: bool, съобщение: str)."""
         if not self.api_key:
@@ -53,8 +125,15 @@ class GeminiJobAnalyzer:
         if not self.client:
             return False, "Клиентът не можа да се инициализира (провери ключа или библиотеката google-genai)."
         try:
-            resp = self.client.models.generate_content(model=self.model_name, contents="Reply with: OK")
-            text = (resp.text or "").strip()
+            if self.is_agent_model():
+                resp = self.client.interactions.create(
+                    model=self.model_name,
+                    input="Reply with: OK"
+                )
+                text = _extract_interaction_text(resp).strip()
+            else:
+                resp = self.client.models.generate_content(model=self.model_name, contents="Reply with: OK")
+                text = (resp.text or "").strip()
             return True, f"Връзката е успешна с модел `{self.model_name}` (отговор: {text[:20]})."
         except Exception as e:
             msg = str(e)
@@ -138,42 +217,72 @@ class GeminiJobAnalyzer:
 }}
 """
 
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.2,
-        )
+        raw_text = None
 
-        response = None
-        candidate_models = [self.model_name, "gemini-3.5-flash-lite", "gemini-2.5-pro"]
-        # Премахваме дубликати, запазвайки реда
-        seen_models = set()
-        models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
-
-        for m in models_to_try:
+        if self.is_agent_model():
             try:
-                response = self.client.models.generate_content(
-                    model=m,
-                    contents=prompt,
-                    config=config
+                response = self.client.interactions.create(
+                    model=self.model_name,
+                    input=prompt,
+                    response_mime_type="application/json",
+                    response_format={
+                        "type": "text",
+                        "mime_type": "application/json",
+                        "schema": JobMatchSchema.model_json_schema(),
+                    },
+                    generation_config={"temperature": 0.2},
                 )
-                if response and response.text:
-                    break
+                if response:
+                    raw_text = _extract_interaction_text(response)
             except Exception as e:
-                # Ако моделът е претоварен (503) или недостъпен, опитваме следващия
-                continue
+                print(f"⚠️ Грешка при анализ с Interactions API ({e}). Използване на евристика...")
+                return self._heuristic_fallback(title, description)
+        else:
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=JobMatchSchema,
+                temperature=0.2,
+            )
 
-        if not response or not response.text:
+            response = None
+            candidate_models = [self.model_name, "gemini-3.5-flash-lite", "gemini-2.5-pro"]
+            # Премахваме дубликати, запазвайки реда
+            seen_models = set()
+            models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
+
+            for m in models_to_try:
+                try:
+                    response = self.client.models.generate_content(
+                        model=m,
+                        contents=prompt,
+                        config=config
+                    )
+                    if response and response.text:
+                        raw_text = response.text
+                        break
+                except Exception as e:
+                    # Ако моделът е претоварен (503) или недостъпен, опитваме следващия
+                    continue
+
+        if not raw_text:
             return self._heuristic_fallback(title, description)
 
         try:
-            data = json.loads(response.text)
+            data = json.loads(_clean_json_text(raw_text))
+            try:
+                score = int(data.get("match_score", 50))
+            except (ValueError, TypeError):
+                score = 50
+            score = max(0, min(100, score))
+            cover_letter_text = data.get("cover_letter_intro") or data.get("cover_letter") or ""
             return {
-                "match_score": int(data.get("match_score", 50)),
-                "ai_summary": data.get("ai_summary", ""),
-                "matched_skills": data.get("matched_skills", []),
-                "missing_skills": data.get("missing_skills", []),
-                "cover_letter": data.get("cover_letter_intro", ""),
-                "recommendation": data.get("recommendation", "save_for_learning")
+                "match_score": score,
+                "ai_summary": data.get("ai_summary") or "",
+                "matched_skills": data.get("matched_skills") or [],
+                "missing_skills": data.get("missing_skills") or [],
+                "cover_letter": cover_letter_text,
+                "cover_letter_intro": cover_letter_text,
+                "recommendation": data.get("recommendation") or "save_for_learning"
             }
         except Exception as e:
             print(f"⚠️ Грешка при парсване на JSON ({e}). Използване на евристика...")
@@ -239,42 +348,64 @@ class GeminiJobAnalyzer:
 ]
 """
 
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=0.2,
-        )
-
-        response = None
-        candidate_models = [self.model_name, "gemini-3.5-flash-lite", "gemini-2.5-pro"]
-        seen_models = set()
-        models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
-
-        for m in models_to_try:
+        raw_text = None
+        if self.is_agent_model():
             try:
-                response = self.client.models.generate_content(
-                    model=m,
-                    contents=prompt,
-                    config=config
+                response = self.client.interactions.create(
+                    model=self.model_name,
+                    input=prompt,
+                    response_mime_type="application/json",
+                    response_format={"type": "text", "mime_type": "application/json"},
+                    generation_config={"temperature": 0.2},
                 )
-                if response and response.text:
-                    break
-            except Exception:
-                continue
+                if response:
+                    raw_text = _extract_interaction_text(response)
+            except Exception as e:
+                print(f"⚠️ Грешка при пакетен анализ с Interactions API ({e})")
+        else:
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+            )
+
+            candidate_models = [self.model_name, "gemini-3.5-flash-lite", "gemini-2.5-pro"]
+            seen_models = set()
+            models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
+
+            for m in models_to_try:
+                try:
+                    response = self.client.models.generate_content(
+                        model=m,
+                        contents=prompt,
+                        config=config
+                    )
+                    if response and response.text:
+                        raw_text = response.text
+                        break
+                except Exception:
+                    continue
 
         results = {}
-        if response and response.text:
+        if raw_text:
             try:
-                data = json.loads(response.text)
+                data = json.loads(_clean_json_text(raw_text))
                 if isinstance(data, list):
                     for item in data:
                         jid = str(item.get("job_id", ""))
+                        try:
+                            score = int(item.get("match_score", 50))
+                        except (ValueError, TypeError):
+                            score = 50
+                        score = max(0, min(100, score))
+                        intro = item.get("cover_letter_intro") or item.get("cover_letter") or ""
                         results[jid] = {
-                            "match_score": int(item.get("match_score", 50)),
-                            "ai_summary": item.get("ai_summary", ""),
-                            "matched_skills": item.get("matched_skills", []),
-                            "missing_skills": item.get("missing_skills", []),
-                            "cover_letter": item.get("cover_letter_intro", ""),
-                            "recommendation": item.get("recommendation", "save_for_learning")
+                            "match_score": score,
+                            "ai_summary": item.get("ai_summary") or "",
+                            "matched_skills": item.get("matched_skills") or [],
+                            "missing_skills": item.get("missing_skills") or [],
+                            "cover_letter": intro,
+                            "cover_letter_intro": intro,
+                            "recommendation": item.get("recommendation") or "save_for_learning"
                         }
             except Exception as e:
                 print(f"⚠️ Грешка при парсване на пакетния JSON: {e}")
@@ -307,11 +438,18 @@ class GeminiJobAnalyzer:
 {description[:4000]}
 """
         try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-            )
-            return response.text.strip()
+            if self.is_agent_model():
+                response = self.client.interactions.create(
+                    model=self.model_name,
+                    input=prompt,
+                )
+                return _extract_interaction_text(response).strip()
+            else:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                )
+                return (response.text or "").strip()
         except Exception as e:
             return f"Грешка при генериране: {e}"
 
