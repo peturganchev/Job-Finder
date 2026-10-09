@@ -736,14 +736,36 @@ with tab5:
         with col_p1:
             p_name = st.text_input("Пълно име", value=edit_profile.get("name", ""))
             p_title = st.text_input("Текуща/Желана Позиция", value=edit_profile.get("title", ""))
-            p_exp = st.number_input("Години опит", value=int(edit_profile.get("experience_years", 0)), min_value=0, max_value=50)
+            
+            # Safely get experience years as int
+            exp_val = edit_profile.get("experience_years", 0)
+            try:
+                exp_val = int(exp_val)
+            except (ValueError, TypeError):
+                exp_val = 0
+            p_exp = st.number_input("Години опит", value=exp_val, min_value=0, max_value=50)
             
         with col_p2:
             p_summary = st.text_area("Обобщение (Summary)", value=edit_profile.get("summary", ""), height=150)
             
-        p_roles = st.text_input("Желани роли (раздели със запетая)", value=", ".join(edit_profile.get("target_roles", [])))
-        p_skills = st.text_area("Ключови умения (раздели със запетая)", value=", ".join(edit_profile.get("core_skills", [])))
-        p_langs = st.text_input("Езици (раздели със запетая)", value=", ".join(edit_profile.get("languages", [])))
+        # Helper to stringify lists that might contain dicts (like legacy languages)
+        def safe_join(items):
+            if not items: return ""
+            if isinstance(items, str): return items
+            if isinstance(items, list):
+                res = []
+                for i in items:
+                    if isinstance(i, dict):
+                        # Attempt to extract 'language' or fallback to stringified dict
+                        res.append(str(i.get("language", i.get("name", list(i.values())[0] if i else ""))))
+                    else:
+                        res.append(str(i))
+                return ", ".join(res)
+            return str(items)
+
+        p_roles = st.text_input("Желани роли (раздели със запетая)", value=safe_join(edit_profile.get("target_roles", [])))
+        p_skills = st.text_area("Ключови умения (раздели със запетая)", value=safe_join(edit_profile.get("core_skills", [])))
+        p_langs = st.text_input("Езици (раздели със запетая)", value=safe_join(edit_profile.get("languages", [])))
         
         submitted = st.form_submit_button("💾 Запази профила в базата")
         
