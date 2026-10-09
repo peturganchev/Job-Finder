@@ -14,7 +14,18 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from src.database.repository import get_repository
 from src.database.models import ApplicationStatus
-from src.intelligence.gemini_analyzer import GeminiJobAnalyzer, get_available_gemini_models
+try:
+    from src.intelligence.gemini_analyzer import GeminiJobAnalyzer, get_available_gemini_models
+except (ImportError, AttributeError):
+    import importlib
+    import src.intelligence.gemini_analyzer as _ga_mod
+    importlib.reload(_ga_mod)
+    GeminiJobAnalyzer = getattr(_ga_mod, "GeminiJobAnalyzer")
+    get_available_gemini_models = getattr(
+        _ga_mod,
+        "get_available_gemini_models",
+        lambda api_key=None: ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-pro", "antigravity-preview-latest"]
+    )
 from src.intelligence.market_insights import MarketInsightsGenerator
 from src.settings_manager import SettingsManager
 from src.validator import JobValidator
