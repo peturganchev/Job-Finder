@@ -1,9 +1,9 @@
 /**
- * Cloudflare Worker: Custom Domain Wrapper for Streamlit Community Cloud
+ * Cloudflare Worker: Seamless Fullscreen Domain Wrapper for Streamlit Community Cloud
  * Domain: job-finder.archevyn.dev -> job-finder-dzbtuvve6sbml9ivzetcio.streamlit.app
  * 
- * Embeds the Streamlit application seamlessly in full-screen (100dvh) without redirect loops,
- * preserving clean URL in the address bar and native websocket performance.
+ * Provides a borderless, 100% full-screen responsive experience without embed footers
+ * or redirect loops, preserving the custom domain in the browser address bar.
  */
 
 const STREAMLIT_APP_URL = "https://job-finder-dzbtuvve6sbml9ivzetcio.streamlit.app";
@@ -12,15 +12,10 @@ export default {
   async fetch(request) {
     const url = new URL(request.url);
 
-    // Build embed URL
-    const embedUrl = new URL(STREAMLIT_APP_URL);
-    embedUrl.searchParams.set("embed", "true");
-
-    // Pass through any extra query parameters from visitor
+    // Build target URL preserving query parameters (without forcing ?embed=true)
+    const targetUrl = new URL(STREAMLIT_APP_URL);
     for (const [key, value] of url.searchParams.entries()) {
-      if (key !== "embed") {
-        embedUrl.searchParams.set(key, value);
-      }
+      targetUrl.searchParams.set(key, value);
     }
 
     const html = `<!DOCTYPE html>
@@ -32,24 +27,30 @@ export default {
   <meta name="description" content="AI Job Finder & Aggregator Dashboard">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💼</text></svg>">
   <style>
-    * {
+    *, *::before, *::after {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
     html, body {
-      width: 100%;
-      height: 100%;
+      width: 100vw;
+      height: 100vh;
       height: 100dvh;
       overflow: hidden;
       background-color: #0e1117;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     #app-frame {
-      width: 100%;
-      height: 100%;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100vw;
+      height: 100vh;
       height: 100dvh;
-      border: none;
+      border: 0;
+      outline: none;
       display: block;
     }
   </style>
@@ -57,8 +58,9 @@ export default {
 <body>
   <iframe
     id="app-frame"
-    src="${embedUrl.toString()}"
-    allow="clipboard-read; clipboard-write; camera; microphone; geolocation"
+    src="${targetUrl.toString()}"
+    allow="clipboard-read; clipboard-write; camera; microphone; geolocation; fullscreen"
+    allowfullscreen="true"
     title="Job Finder"
   ></iframe>
 </body>

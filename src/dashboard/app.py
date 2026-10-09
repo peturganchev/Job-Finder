@@ -35,6 +35,27 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Скриване на излишни Streamlit менюта, футъри и бутони за чист нативен изглед на цял екран
+st.markdown("""
+<style>
+    #MainMenu {visibility: hidden;}
+    footer {display: none !important; visibility: hidden !important;}
+    header[data-testid="stHeader"] {display: none !important;}
+    .stDeployButton {display: none !important;}
+    [data-testid="stToolbar"] {display: none !important; visibility: hidden !important;}
+    [data-testid="stDecoration"] {display: none !important; visibility: hidden !important;}
+    [data-testid="stStatusWidget"] {display: none !important; visibility: hidden !important;}
+    div[class*="viewerBadge"] {display: none !important;}
+    
+    /* Оптимизиран отстъп на съдържанието */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+        max-width: 95% !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Проверка за автентикация (ако Supabase е активен)
 current_user = None
 user_profile = {}

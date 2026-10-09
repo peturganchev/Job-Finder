@@ -108,42 +108,44 @@ def save_user_profile(user_id: str, settings: Dict[str, Any]) -> bool:
 
 def render_auth_view():
     """Визуализира интерфейс за вход / регистрация в дашборда."""
-    st.markdown("<h2 style='text-align: center;'>🔐 Вход в Job Finder</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: gray;'>Влез в профила си за достъп до AI анализите и обявите</p>", unsafe_allow_html=True)
-    
-    tab_login, tab_register = st.tabs(["🔑 Вход", "✨ Регистрация"])
-    
-    with tab_login:
-        with st.form("login_form"):
-            email = st.text_input("Имейл", key="login_email")
-            password = st.text_input("Парола", type="password", key="login_pass")
-            submit = st.form_submit_button("Влез", use_container_width=True, type="primary")
-            
-            if submit:
-                if not email or not password:
-                    st.warning("Моля, попълни всички полета.")
-                else:
-                    success, msg = sign_in_user(email, password)
-                    if success:
-                        st.success(msg)
-                        st.rerun()
+    col_l, col_center, col_r = st.columns([1, 1.6, 1])
+    with col_center:
+        st.markdown("<h2 style='text-align: center; margin-top: 1rem;'>🔐 Вход в Job Finder</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #888; margin-bottom: 1.5rem;'>Влез в профила си за достъп до AI анализите и обявите</p>", unsafe_allow_html=True)
+        
+        tab_login, tab_register = st.tabs(["🔑 Вход", "✨ Регистрация"])
+        
+        with tab_login:
+            with st.form("login_form"):
+                email = st.text_input("Имейл", key="login_email")
+                password = st.text_input("Парола", type="password", key="login_pass")
+                submit = st.form_submit_button("Влез", use_container_width=True, type="primary")
+                
+                if submit:
+                    if not email or not password:
+                        st.warning("Моля, попълни всички полета.")
                     else:
-                        st.error(f"Грешка при вход: {msg}")
+                        success, msg = sign_in_user(email, password)
+                        if success:
+                            st.success(msg)
+                            st.rerun()
+                        else:
+                            st.error(f"Грешка при вход: {msg}")
 
-    with tab_register:
-        with st.form("register_form"):
-            reg_email = st.text_input("Имейл за регистрация", key="reg_email")
-            reg_password = st.text_input("Парола (мин. 6 символа)", type="password", key="reg_pass")
-            reg_submit = st.form_submit_button("Създай акаунт", use_container_width=True)
-            
-            if reg_submit:
-                if not reg_email or not reg_password:
-                    st.warning("Моля, попълни всички полета.")
-                elif len(reg_password) < 6:
-                    st.warning("Паролата трябва да е поне 6 символа.")
-                else:
-                    success, msg = sign_up_user(reg_email, reg_password)
-                    if success:
-                        st.success(msg)
+        with tab_register:
+            with st.form("register_form"):
+                reg_email = st.text_input("Имейл за регистрация", key="reg_email")
+                reg_password = st.text_input("Парола (мин. 6 символа)", type="password", key="reg_pass")
+                reg_submit = st.form_submit_button("Създай акаунт", use_container_width=True)
+                
+                if reg_submit:
+                    if not reg_email or not reg_password:
+                        st.warning("Моля, попълни всички полета.")
+                    elif len(reg_password) < 6:
+                        st.warning("Паролата трябва да е поне 6 символа.")
                     else:
-                        st.error(f"Грешка при регистрация: {msg}")
+                        success, msg = sign_up_user(reg_email, reg_password)
+                        if success:
+                            st.success(msg)
+                        else:
+                            st.error(f"Грешка при регистрация: {msg}")
