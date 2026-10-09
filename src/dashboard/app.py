@@ -44,8 +44,10 @@ st.markdown("""
     .stDeployButton {display: none !important;}
     [data-testid="stToolbar"] {display: none !important; visibility: hidden !important;}
     [data-testid="stDecoration"] {display: none !important; visibility: hidden !important;}
-    [data-testid="stStatusWidget"] {display: none !important; visibility: hidden !important;}
     div[class*="viewerBadge"] {display: none !important;}
+    div[class*="embeddedApp"] {border: none !important;}
+    [data-testid="stEmbedFooter"] {display: none !important; visibility: hidden !important;}
+    .viewerBadge_container__1QSob {display: none !important;}
     
     /* Оптимизиран отстъп на съдържанието */
     .block-container {

@@ -1,9 +1,9 @@
 /**
- * Cloudflare Worker: Seamless Fullscreen Domain Wrapper for Streamlit Community Cloud
+ * Cloudflare Worker: Seamless Fullscreen Custom Domain Wrapper for Streamlit Community Cloud
  * Domain: job-finder.archevyn.dev -> job-finder-dzbtuvve6sbml9ivzetcio.streamlit.app
  * 
- * Provides a borderless, 100% full-screen responsive experience without embed footers
- * or redirect loops, preserving the custom domain in the browser address bar.
+ * Uses embed=true to bypass third-party cookie restrictions (avoiding redirect loops)
+ * while seamlessly cropping out the embed footer bar for a true 100% native fullscreen experience.
  */
 
 const STREAMLIT_APP_URL = "https://job-finder-dzbtuvve6sbml9ivzetcio.streamlit.app";
@@ -12,10 +12,15 @@ export default {
   async fetch(request) {
     const url = new URL(request.url);
 
-    // Build target URL preserving query parameters (without forcing ?embed=true)
+    // Build target URL with embed=true to prevent 3rd-party cookie redirect loops
     const targetUrl = new URL(STREAMLIT_APP_URL);
+    targetUrl.searchParams.set("embed", "true");
+
+    // Pass through any extra query parameters from visitor
     for (const [key, value] of url.searchParams.entries()) {
-      targetUrl.searchParams.set(key, value);
+      if (key !== "embed") {
+        targetUrl.searchParams.set(key, value);
+      }
     }
 
     const html = `<!DOCTYPE html>
@@ -40,15 +45,15 @@ export default {
       background-color: #0e1117;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
+    /* The iframe is made 40px taller and clipped by parent overflow:hidden,
+       completely hiding Streamlit's white embed footer bar while keeping native scrolling */
     #app-frame {
-      position: fixed;
+      position: absolute;
       top: 0;
       left: 0;
-      right: 0;
-      bottom: 0;
       width: 100vw;
-      height: 100vh;
-      height: 100dvh;
+      height: calc(100vh + 40px);
+      height: calc(100dvh + 40px);
       border: 0;
       outline: none;
       display: block;
