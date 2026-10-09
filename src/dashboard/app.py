@@ -857,12 +857,12 @@ with tab_settings:
     st.markdown("#### Модел")
     selected_model = st.selectbox(
         "Избери Gemini модел",
-        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"],
-        index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"] else 0
+        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"],
+        index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"] else 0
     )
     
     # Custom model fallback
-    custom_model = st.text_input("Или въведи персонализиран модел (напр. tunedModels/...)", value=settings.ai.gemini_model if settings.ai.gemini_model not in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"] else "")
+    custom_model = st.text_input("Или въведи персонализиран модел (напр. tunedModels/...)", value=settings.ai.gemini_model if settings.ai.gemini_model not in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"] else "")
     final_model = custom_model.strip() if custom_model.strip() else selected_model
     
     if st.button("💾 Запази всички настройки", type="primary"):
