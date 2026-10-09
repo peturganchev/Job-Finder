@@ -101,8 +101,13 @@ class GeminiJobAnalyzer:
     def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None, profile_data: Optional[Dict[str, Any]] = None):
         from src.settings_manager import SettingsManager
         sm = SettingsManager()
-        self.api_key = api_key or sm.get_api_key()
-        self.model_name = (model_name or sm.load().ai.gemini_model or "gemini-3.5-flash").strip()
+        raw_model = (model_name or sm.load().ai.gemini_model or "gemini-3.8-flash").strip()
+        if raw_model.lower() == "antigravity":
+            self.model_name = "antigravity-preview-latest"
+        elif raw_model.startswith("models/"):
+            self.model_name = raw_model.replace("models/", "")
+        else:
+            self.model_name = raw_model
         self.profile = profile_data or load_profile()
         self.client = None
 

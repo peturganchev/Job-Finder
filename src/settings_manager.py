@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 AVAILABLE_SOURCES = ["dev.bg", "jobs.bg", "linkedin"]
-AVAILABLE_MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"]
+AVAILABLE_MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"]
 DEV_BG_CATEGORIES = {
     "ml-ai-data": "ML / AI / Data",
     "python": "Python",

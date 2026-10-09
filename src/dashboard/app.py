@@ -39,15 +39,32 @@ st.set_page_config(
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
-    footer {display: none !important; visibility: hidden !important;}
+    footer,
+    [data-testid="stEmbedFooter"],
+    .stEmbedFooter,
+    div[class*="viewerBadge"],
+    div[class*="ViewerBadge"],
+    div[class*="viewerBadge_container"],
+    div[class*="StatusWidget"],
+    .viewerBadge_container__1QSob,
+    [data-testid="stStatusWidget"],
+    .embeddedApp,
+    .stApp > footer {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0px !important;
+        min-height: 0px !important;
+        max-height: 0px !important;
+        padding: 0px !important;
+        margin: 0px !important;
+        overflow: hidden !important;
+        border: none !important;
+    }
     header[data-testid="stHeader"] {display: none !important;}
     .stDeployButton {display: none !important;}
     [data-testid="stToolbar"] {display: none !important; visibility: hidden !important;}
     [data-testid="stDecoration"] {display: none !important; visibility: hidden !important;}
-    div[class*="viewerBadge"] {display: none !important;}
     div[class*="embeddedApp"] {border: none !important;}
-    [data-testid="stEmbedFooter"] {display: none !important; visibility: hidden !important;}
-    .viewerBadge_container__1QSob {display: none !important;}
     
     /* Оптимизиран отстъп на съдържанието */
     .block-container {
@@ -57,6 +74,33 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+import streamlit.components.v1 as components
+components.html("""
+<script>
+function hideBadges() {
+    const sel = ['[data-testid="stEmbedFooter"]', '.stEmbedFooter', 'footer', 'div[class*="viewerBadge"]', '.viewerBadge_container__1QSob'];
+    sel.forEach(s => {
+        document.querySelectorAll(s).forEach(e => {
+            e.style.setProperty('display', 'none', 'important');
+            e.style.setProperty('visibility', 'hidden', 'important');
+            e.style.setProperty('height', '0px', 'important');
+        });
+        try {
+            if (window.parent && window.parent.document) {
+                window.parent.document.querySelectorAll(s).forEach(e => {
+                    e.style.setProperty('display', 'none', 'important');
+                    e.style.setProperty('visibility', 'hidden', 'important');
+                    e.style.setProperty('height', '0px', 'important');
+                });
+            }
+        } catch(err) {}
+    });
+}
+hideBadges();
+setInterval(hideBadges, 800);
+</script>
+""", height=0, width=0)
 
 # Проверка за автентикация (ако Supabase е активен)
 current_user = None
@@ -828,6 +872,28 @@ with tab_settings:
     new_key = st.text_input("Gemini API Key (Google AI Studio)", value="", type="password", placeholder=f"Текущ: {current_masked}")
     st.markdown("[Вземи безплатен ключ от Google AI Studio](https://aistudio.google.com/)")
     
+    st.markdown("#### Модел")
+    current_saved_model = (user_profile.get("gemini_model") if current_user else None) or settings.ai.gemini_model or "gemini-3.8-flash"
+    model_options = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"]
+    
+    # Handle legacy 'antigravity' string
+    if current_saved_model == "antigravity":
+        current_saved_model = "antigravity-preview-latest"
+        
+    selected_model = st.selectbox(
+        "Избери Gemini модел (Препоръчан: gemini-3.8-flash)",
+        options=model_options,
+        index=model_options.index(current_saved_model) if current_saved_model in model_options else 0,
+        help="gemini-3.8-flash е най-новият и бърз модел. antigravity-preview-latest е цялостен AI Агент."
+    )
+    
+    # Custom model fallback
+    custom_model = st.text_input("Или въведи персонализиран модел (напр. tunedModels/...)", value=current_saved_model if current_saved_model not in model_options else "")
+    final_model = custom_model.strip() if custom_model.strip() else selected_model
+
+    if "antigravity" in final_model.lower():
+        st.info("💡 Избран е **Antigravity Agent** (`antigravity-preview-latest`). Агентите извършват задълбочени многостъпкови разсъждения, затова тестовете и анализите отнемат повече време (около 20-40 сек).")
+
     col_ai1, col_ai2, col_ai3 = st.columns([1, 1, 2])
     with col_ai1:
         if st.button("💾 Запази ключ"):
@@ -845,25 +911,14 @@ with tab_settings:
             st.rerun()
     with col_ai3:
         if st.button("🧪 Тествай връзката"):
-            with st.spinner("Тестване на Gemini API..."):
+            with st.spinner(f"Тестване на `{final_model}` през Gemini API..."):
                 active_k = new_key or current_key
-                analyzer = GeminiJobAnalyzer(api_key=active_k)
+                analyzer = GeminiJobAnalyzer(api_key=active_k, model_name=final_model)
                 success, msg = analyzer.test_connection()
                 if success:
                     st.success(f"Успех! {msg}")
                 else:
                     st.error(f"Грешка: {msg}")
-
-    st.markdown("#### Модел")
-    selected_model = st.selectbox(
-        "Избери Gemini модел",
-        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"],
-        index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"] else 0
-    )
-    
-    # Custom model fallback
-    custom_model = st.text_input("Или въведи персонализиран модел (напр. tunedModels/...)", value=settings.ai.gemini_model if settings.ai.gemini_model not in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"] else "")
-    final_model = custom_model.strip() if custom_model.strip() else selected_model
     
     if st.button("💾 Запази всички настройки", type="primary"):
         settings.sources.dev_bg = use_devbg
