@@ -100,6 +100,9 @@ def load_user_profile(user_id: str) -> Dict[str, Any]:
     if not client:
         return {}
     try:
+        user = st.session_state.get("user")
+        if user and user.get("access_token"):
+            client.postgrest.auth(user["access_token"])
         res = client.table("user_settings").select("*").eq("user_id", str(user_id)).limit(1).execute()
         if res.data:
             return res.data[0]
@@ -114,6 +117,9 @@ def save_user_profile(user_id: str, settings: Dict[str, Any]) -> bool:
     if not client:
         return False
     try:
+        user = st.session_state.get("user")
+        if user and user.get("access_token"):
+            client.postgrest.auth(user["access_token"])
         payload = {
             "user_id": str(user_id),
             **settings
@@ -121,6 +127,7 @@ def save_user_profile(user_id: str, settings: Dict[str, Any]) -> bool:
         res = client.table("user_settings").upsert(payload, on_conflict="user_id").execute()
         return len(res.data) > 0
     except Exception as e:
+        print(f"⚠️ Грешка при запазване в Supabase: {e}")
         st.error(f"Грешка при запазване на настройките в Supabase: {e}")
         return False
 

@@ -14,7 +14,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from src.database.repository import get_repository
 from src.database.models import ApplicationStatus
-from src.intelligence.gemini_analyzer import GeminiJobAnalyzer
+from src.intelligence.gemini_analyzer import GeminiJobAnalyzer, get_available_gemini_models
 from src.intelligence.market_insights import MarketInsightsGenerator
 from src.settings_manager import SettingsManager
 from src.validator import JobValidator
@@ -874,25 +874,26 @@ with tab_settings:
     
     st.markdown("#### Модел")
     current_saved_model = (user_profile.get("gemini_model") if current_user else None) or settings.ai.gemini_model or "gemini-3.8-flash"
-    model_options = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity-preview-latest"]
-    
-    # Handle legacy 'antigravity' string
     if current_saved_model == "antigravity":
         current_saved_model = "antigravity-preview-latest"
         
-    selected_model = st.selectbox(
-        "Избери Gemini модел (Препоръчан: gemini-3.8-flash)",
-        options=model_options,
-        index=model_options.index(current_saved_model) if current_saved_model in model_options else 0,
-        help="gemini-3.8-flash е най-новият и бърз модел. antigravity-preview-latest е цялостен AI Агент."
-    )
+    # Динамично извличане на достъпните модели за активния ключ
+    active_key_to_query = (user_profile.get("gemini_api_key") if current_user else None) or settings_mgr.get_api_key()
+    available_models = get_available_gemini_models(active_key_to_query)
     
-    # Custom model fallback
-    custom_model = st.text_input("Или въведи персонализиран модел (напр. tunedModels/...)", value=current_saved_model if current_saved_model not in model_options else "")
-    final_model = custom_model.strip() if custom_model.strip() else selected_model
+    if current_saved_model not in available_models:
+        available_models.insert(0, current_saved_model)
+        
+    selected_model = st.selectbox(
+        "Избери Gemini модел (достъпни за твоя ключ)",
+        options=available_models,
+        index=available_models.index(current_saved_model) if current_saved_model in available_models else 0,
+        help="Списъкът показва само реално поддържаните модели за твоя API ключ."
+    )
+    final_model = selected_model
 
     if "antigravity" in final_model.lower():
-        st.info("💡 Избран е **Antigravity Agent** (`antigravity-preview-latest`). Агентите извършват задълбочени многостъпкови разсъждения, затова тестовете и анализите отнемат повече време (около 20-40 сек).")
+        st.info("💡 Избран е **Antigravity Agent** (`antigravity-preview-latest`). Това е AI Агент с многостъпково мислене, затова отговорите му отнемат около 20-40 секунди.")
 
     col_ai1, col_ai2, col_ai3 = st.columns([1, 1, 2])
     with col_ai1:
@@ -901,6 +902,7 @@ with tab_settings:
                 save_user_profile(current_user["id"], {"gemini_api_key": new_key})
             settings_mgr.set_api_key(new_key)
             st.success("Ключът е запазен!")
+            import time; time.sleep(0.5)
             st.rerun()
     with col_ai2:
         if st.button("🗑️ Изтрий ключ"):
@@ -908,6 +910,7 @@ with tab_settings:
                 save_user_profile(current_user["id"], {"gemini_api_key": None})
             settings_mgr.set_api_key(None)
             st.success("Ключът е изтрит от настройките.")
+            import time; time.sleep(0.5)
             st.rerun()
     with col_ai3:
         if st.button("🧪 Тествай връзката"):
@@ -934,9 +937,14 @@ with tab_settings:
             st.error("Трябва да избереш поне един източник!")
         else:
             settings_mgr.save(settings)
+            db_saved = True
             if current_user:
-                save_user_profile(current_user["id"], {
+                db_saved = save_user_profile(current_user["id"], {
                     "gemini_model": final_model
                 })
-            st.success("Всички настройки са запазени!")
-            st.rerun()
+            if db_saved:
+                st.success("Всички настройки са запазени!")
+                import time; time.sleep(0.8)
+                st.rerun()
+            else:
+                st.warning("Настройките са запазени локално, но възникна грешка при синхронизацията със Supabase (виж съобщението за грешка по-горе).")

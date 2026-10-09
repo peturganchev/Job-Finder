@@ -42,6 +42,35 @@ def is_agent_model(model_name: Optional[str]) -> bool:
     return "antigravity" in lower or "agent" in lower
 
 
+def get_available_gemini_models(api_key: Optional[str] = None) -> List[str]:
+    """Връща списък с реално достъпните модели за дадения Gemini API ключ."""
+    default_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-pro", "antigravity-preview-latest"]
+    if not api_key:
+        return default_models
+    try:
+        from google import genai
+        c = genai.Client(api_key=api_key)
+        extracted = []
+        for m in c.models.list():
+            name = getattr(m, "name", "").replace("models/", "").strip()
+            lower = name.lower()
+            if any(k in lower for k in ["flash", "pro", "antigravity"]) and not any(k in lower for k in ["tts", "image", "embedding", "live", "transcribe", "robotics"]):
+                extracted.append(name)
+        
+        preferred_order = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-pro", "antigravity-preview-latest"]
+        final_list = []
+        for pref in preferred_order:
+            if pref in extracted:
+                final_list.append(pref)
+        for m in sorted(extracted):
+            if m not in final_list:
+                final_list.append(m)
+        return final_list if final_list else default_models
+    except Exception as e:
+        print(f"⚠️ Грешка при зареждане на модели от API: {e}")
+        return default_models
+
+
 def _clean_json_text(text: str) -> str:
     """Cleans potential markdown code blocks and surrounding commentary from model JSON output."""
     cleaned = (text or "").strip()
