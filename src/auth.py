@@ -3,8 +3,12 @@ from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 import streamlit as st
 from supabase import create_client, Client
+from streamlit_cookies_controller import CookieController
 
 load_dotenv()
+
+# Инициализация на контролера за бисквитки
+controller = CookieController()
 
 
 def get_supabase_client() -> Optional[Client]:
@@ -25,8 +29,17 @@ def is_auth_enabled() -> bool:
 
 
 def get_current_user() -> Optional[Dict[str, Any]]:
-    """Връща текущо логнатия потребител от Streamlit сесията."""
-    return st.session_state.get("user")
+    """Връща текущо логнатия потребител от сесията или от запазена бисквитка."""
+    if "user" in st.session_state and st.session_state["user"]:
+        return st.session_state["user"]
+        
+    # Проверка за запазена сесия след рефреш
+    cookie_user = controller.get("job_finder_session")
+    if cookie_user:
+        st.session_state["user"] = cookie_user
+        return cookie_user
+        
+    return None
 
 
 def sign_in_user(email: str, password: str) -> tuple[bool, str]:
@@ -37,11 +50,14 @@ def sign_in_user(email: str, password: str) -> tuple[bool, str]:
     try:
         res = client.auth.sign_in_with_password({"email": email, "password": password})
         if res.user:
-            st.session_state["user"] = {
+            user_data = {
                 "id": str(res.user.id),
                 "email": res.user.email,
                 "access_token": res.session.access_token if res.session else None
             }
+            st.session_state["user"] = user_data
+            # Запазваме сесията в бисквитка за 30 дни
+            controller.set("job_finder_session", user_data, max_age=30 * 24 * 60 * 60)
             return True, "Успешен вход!"
         return False, "Невалидни данни за вход."
     except Exception as e:
@@ -72,6 +88,9 @@ def sign_out_user():
             pass
     if "user" in st.session_state:
         del st.session_state["user"]
+    
+    # Изтриваме бисквитката
+    controller.remove("job_finder_session")
     st.rerun()
 
 
