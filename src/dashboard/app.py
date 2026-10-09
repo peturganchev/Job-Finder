@@ -294,6 +294,13 @@ with tab_search:
     settings_mgr = SettingsManager()
     settings = settings_mgr.load()
     
+    # Прилагане на потребителски настройки за черния списък (ако има такива)
+    if current_user and user_profile:
+        if "blacklist_titles" in user_profile:
+            settings.blacklist_title = user_profile["blacklist_titles"]
+        if "blacklist_companies" in user_profile:
+            settings.blacklist_companies = user_profile["blacklist_companies"]
+    
     col1, col2 = st.columns(2)
     
     with col1:
@@ -323,6 +330,12 @@ with tab_search:
             min_value=1, max_value=50, value=settings.search.max_jobs_per_source
         )
         
+        st.markdown("### 🚫 Черен списък (Blacklist)")
+        st.caption("Обяви с тези думи в заглавието/компанията се игнорират.")
+        
+        bl_titles = st.text_area("Изключи по заглавие", value="\n".join(settings.blacklist_title), height=80)
+        bl_comps = st.text_area("Изключи по компания", value="\n".join(settings.blacklist_companies), height=80)
+        
         clean_choice = st.radio(
             "🧹 Почистване преди търсене:",
             options=[
@@ -339,7 +352,17 @@ with tab_search:
             settings.search.location = location
             settings.search.remote_location = remote_location
             settings.search.max_jobs_per_source = max_jobs
+            settings.blacklist_title = [k.strip() for k in bl_titles.split("\n") if k.strip()]
+            settings.blacklist_companies = [k.strip() for k in bl_comps.split("\n") if k.strip()]
+            
             settings_mgr.save(settings)
+            
+            if current_user:
+                save_user_profile(current_user["id"], {
+                    "blacklist_titles": settings.blacklist_title,
+                    "blacklist_companies": settings.blacklist_companies
+                })
+                
             st.success("Параметрите са запазени!")
             
     with col2:
@@ -742,12 +765,6 @@ with tab_settings:
         index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity"] else 0
     )
     
-    st.markdown("### 🚫 Черен списък (Blacklist)")
-    st.caption("Обяви, съдържащи тези думи в заглавието или компанията, ще бъдат игнорирани (по 1 на ред).")
-    
-    bl_titles = st.text_area("Филтриране по заглавие", value="\n".join(settings.blacklist_title), height=100)
-    bl_comps = st.text_area("Филтриране по компания", value="\n".join(settings.blacklist_companies), height=100)
-    
     if st.button("💾 Запази всички настройки", type="primary"):
         settings.sources.dev_bg = use_devbg
         settings.sources.jobs_bg = use_jobsbg
@@ -756,8 +773,6 @@ with tab_settings:
         settings.sources.euremotejobs = use_euremote
         settings.sources.hackernews = use_hackernews
         settings.ai.gemini_model = selected_model
-        settings.blacklist_title = [k.strip() for k in bl_titles.split("\n") if k.strip()]
-        settings.blacklist_companies = [k.strip() for k in bl_comps.split("\n") if k.strip()]
         
         # Validate sources
         if not (use_devbg or use_jobsbg or use_linkedin or use_himalayas or use_euremote or use_hackernews):
@@ -766,9 +781,7 @@ with tab_settings:
             settings_mgr.save(settings)
             if current_user:
                 save_user_profile(current_user["id"], {
-                    "gemini_model": selected_model,
-                    "blacklist_titles": settings.blacklist_title,
-                    "blacklist_companies": settings.blacklist_companies
+                    "gemini_model": selected_model
                 })
             st.success("Всички настройки са запазени!")
             st.rerun()
