@@ -857,9 +857,13 @@ with tab_settings:
     st.markdown("#### Модел")
     selected_model = st.selectbox(
         "Избери Gemini модел",
-        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity"],
-        index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro", "antigravity"] else 0
+        options=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"],
+        index=["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"].index(settings.ai.gemini_model) if settings.ai.gemini_model in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"] else 0
     )
+    
+    # Custom model fallback
+    custom_model = st.text_input("Или въведи персонализиран модел (напр. tunedModels/...)", value=settings.ai.gemini_model if settings.ai.gemini_model not in ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-pro"] else "")
+    final_model = custom_model.strip() if custom_model.strip() else selected_model
     
     if st.button("💾 Запази всички настройки", type="primary"):
         settings.sources.dev_bg = use_devbg
@@ -868,7 +872,7 @@ with tab_settings:
         settings.sources.himalayas = use_himalayas
         settings.sources.euremotejobs = use_euremote
         settings.sources.hackernews = use_hackernews
-        settings.ai.gemini_model = selected_model
+        settings.ai.gemini_model = final_model
         
         # Validate sources
         if not (use_devbg or use_jobsbg or use_linkedin or use_himalayas or use_euremote or use_hackernews):
@@ -877,7 +881,7 @@ with tab_settings:
             settings_mgr.save(settings)
             if current_user:
                 save_user_profile(current_user["id"], {
-                    "gemini_model": selected_model
+                    "gemini_model": final_model
                 })
             st.success("Всички настройки са запазени!")
             st.rerun()
