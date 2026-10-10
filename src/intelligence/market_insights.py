@@ -87,25 +87,37 @@ class MarketInsightsGenerator:
 5. 📚 Препоръчителен план за учене през DeepLearning.AI курсовете.
 """
 
-        candidate_models = [self.analyzer.model_name, "gemini-3.5-flash-lite", "gemini-2.5-pro"]
+        from src.intelligence.gemini_analyzer import is_agent_model, _extract_interaction_text
+
+        candidate_models = [self.analyzer.model_name, "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview"]
         seen_models = set()
         models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
 
-        response = None
+        raw_report_text = None
         for m in models_to_try:
             try:
-                response = self.analyzer.client.models.generate_content(
-                    model=m,
-                    contents=prompt
-                )
-                if response and response.text:
+                if is_agent_model(m):
+                    resp = self.analyzer.client.interactions.create(
+                        model=m,
+                        input=prompt
+                    )
+                    raw_report_text = _extract_interaction_text(resp).strip()
+                else:
+                    resp = self.analyzer.client.models.generate_content(
+                        model=m,
+                        contents=prompt
+                    )
+                    if resp and resp.text:
+                        raw_report_text = resp.text.strip()
+                if raw_report_text:
                     break
-            except Exception:
+            except Exception as e:
+                print(f"⚠️ Модел {m} върна грешка при пазарен анализ: {e}")
                 continue
 
-        if response and response.text:
+        if raw_report_text:
             header = f"# 🚀 Анализ на пазара за Agentic AI роли (София & Remote)\n*Генериран на: {datetime.now().strftime('%Y-%m-%d %H:%M')}*\n\n"
-            return header + response.text.strip()
+            return header + raw_report_text
 
         return self._generate_heuristic_report(jobs, stats)
 

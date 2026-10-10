@@ -64,7 +64,21 @@ st.markdown("""
         overflow: hidden !important;
         border: none !important;
     }
-    header[data-testid="stHeader"] {display: none !important;}
+    /* Прозрачен хедер без фонови ленти */
+    header[data-testid="stHeader"] {
+        background-color: transparent !important;
+        color: inherit !important;
+    }
+    /* Видим и лесен за натискане бутон за менюто на телефон и десктоп */
+    [data-testid="stSidebarCollapsedControl"],
+    button[kind="header"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 1000000 !important;
+        background-color: rgba(255, 255, 255, 0.08) !important;
+        border-radius: 8px !important;
+    }
     .stDeployButton {display: none !important;}
     [data-testid="stToolbar"] {display: none !important; visibility: hidden !important;}
     [data-testid="stDecoration"] {display: none !important; visibility: hidden !important;}
@@ -291,7 +305,22 @@ with tab1:
                 st.rerun()
 
     if not jobs:
-        st.info("Няма обяви, отговарящи на избраните филтри. Опитай да намалиш минималния мач или изчисти филтъра за заплата.")
+        st.info("Няма обяви в твоя личен списък, отговарящи на избраните филтри.")
+        if current_user:
+            with st.container(border=True):
+                st.markdown("### 📥 Искаш ли да заредиш наличните обяви от общия каталог?")
+                st.caption("Ако в системата вече има събрани обяви от предишни търсения, можеш да ги свържеш директно с твоя акаунт с един клик:")
+                col_imp1, col_imp2 = st.columns([1, 2])
+                with col_imp1:
+                    if st.button("📥 Зареди обявите от каталога", type="primary", use_container_width=True):
+                        with st.spinner("Синхронизиране на обяви към твоя профил..."):
+                            imported_count = repo.import_catalog_jobs_to_user(limit=100)
+                            if imported_count > 0:
+                                st.success(f"Заредени {imported_count} позиции в твоя списък!")
+                                import time; time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.info("Всички налични обяви в каталога вече са свързани с твоя профил. Можеш да стартираш ново търсене от таб '🔍 Търсене'.")
     else:
         for job in jobs:
             score = job.match_score or 0
@@ -477,6 +506,8 @@ with tab_search:
                         f.write("Стартиране на търсенето...\n")
                     
                     cmd = [sys.executable, "run.py", "--search"]
+                    if current_user:
+                        cmd.append(f"--user-id={current_user['id']}")
                     if clean_choice == "Изчисти само необработените ('New')":
                         cmd.append("--clear-new")
                     elif clean_choice == "Изчисти абсолютно всички обяви (Пълен ресет)":
@@ -775,7 +806,9 @@ with tab5:
                 structured_cv = extractor.parse_cv(cv_text)
                 
                 if structured_cv:
-                    st.session_state["draft_profile"] = structured_cv
+                    merged_draft = dict(current_profile)
+                    merged_draft.update(structured_cv)
+                    st.session_state["draft_profile"] = merged_draft
                     st.success("CV-то е успешно парснато! Прегледай данните по-долу и запази.")
                 else:
                     st.error("Грешка при парсването. Опитай отново.")
@@ -787,10 +820,13 @@ with tab5:
     edit_profile = st.session_state.get("draft_profile", current_profile)
     
     with st.form("profile_form"):
+        st.markdown("#### 📄 1. Досегашен профил от твоето CV")
+        st.caption("Информация за текущия ти професионален бекграунд и натрупан практически опит.")
         col_p1, col_p2 = st.columns(2)
         with col_p1:
             p_name = st.text_input("Пълно име", value=edit_profile.get("name", ""))
-            p_title = st.text_input("Текуща/Желана Позиция", value=edit_profile.get("title", ""))
+            current_role_val = edit_profile.get("current_title") or edit_profile.get("title", "")
+            p_current_title = st.text_input("Настояща / Последна заемана длъжност (от CV)", value=current_role_val, help="Напр. Senior Survey Programmer, Backend Developer, QA Engineer")
             
             # Safely get experience years as int
             exp_val = edit_profile.get("experience_years", 0)
@@ -798,10 +834,10 @@ with tab5:
                 exp_val = int(exp_val)
             except (ValueError, TypeError):
                 exp_val = 0
-            p_exp = st.number_input("Години опит", value=exp_val, min_value=0, max_value=50)
+            p_exp = st.number_input("Общ трудов стаж (години)", value=exp_val, min_value=0, max_value=50)
             
         with col_p2:
-            p_summary = st.text_area("Обобщение (Summary)", value=edit_profile.get("summary", ""), height=150)
+            p_summary = st.text_area("Резюме на опита (Summary)", value=edit_profile.get("summary", ""), height=130, help="Кратко обобщение на досегашната ти кариера и силни страни")
             
         # Helper to stringify lists that might contain dicts (like legacy languages)
         def safe_join(items):
@@ -811,28 +847,63 @@ with tab5:
                 res = []
                 for i in items:
                     if isinstance(i, dict):
-                        # Attempt to extract 'language' or fallback to stringified dict
                         res.append(str(i.get("language", i.get("name", list(i.values())[0] if i else ""))))
                     else:
                         res.append(str(i))
                 return ", ".join(res)
             return str(items)
 
-        p_roles = st.text_input("Желани роли (раздели със запетая)", value=safe_join(edit_profile.get("target_roles", [])))
-        p_skills = st.text_area("Ключови умения (раздели със запетая)", value=safe_join(edit_profile.get("core_skills", [])))
-        p_langs = st.text_input("Езици (раздели със запетая)", value=safe_join(edit_profile.get("languages", [])))
-        
-        submitted = st.form_submit_button("💾 Запази профила в базата")
+        cur_skills_val = edit_profile.get("current_skills") or edit_profile.get("core_skills", [])
+        p_current_skills = st.text_area("Настоящи практически умения (от CV, разделени със запетая)", value=safe_join(cur_skills_val), height=70, help="Технологии и инструменти, с които реално си работил досега")
+        p_langs = st.text_input("Говорими езици (раздели със запетая)", value=safe_join(edit_profile.get("languages", [])))
+
+        st.markdown("---")
+        st.markdown("#### 🎯 2. Търсена кариерна посока & Предпочитания")
+        st.caption("Каква роля търсиш сега и в кои нови AI технологии искаш да се развиваш.")
+
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            target_roles_val = edit_profile.get("target_roles", ["Agentic AI Engineer", "AI Python Developer"])
+            p_target_roles = st.text_input("Търсени длъжности / роли (раздели със запетая)", value=safe_join(target_roles_val), help="Позициите, за които кандидатстваш сега. Напр: Agentic AI Engineer, Python LLM Developer")
+            
+            seniority_opts = ["Junior", "Mid (Intermediate)", "Senior", "Lead / Architect", "Career Switcher / Transition"]
+            curr_sen = edit_profile.get("seniority_level", "Mid (Intermediate)")
+            sen_idx = seniority_opts.index(curr_sen) if curr_sen in seniority_opts else 1
+            p_seniority = st.selectbox("Желано ниво (Seniority)", options=seniority_opts, index=sen_idx)
+
+        with col_t2:
+            target_skills_val = edit_profile.get("target_skills", ["LangChain", "CrewAI", "AutoGen", "MCP", "FastAPI", "RAG"])
+            p_target_skills = st.text_area("Целеви технологии & библиотеки за развитие", value=safe_join(target_skills_val), height=70, help="Технологиите, в които се развиваш и за които търсиш проекти. Напр: LangChain, CrewAI, AutoGen, MCP, RAG, FastAPI")
+
+            work_mode_opts = ["100% Remote (Дистанционно)", "Hybrid (Хибридно)", "В офис (София)", "Без значение"]
+            curr_wm = edit_profile.get("work_mode", "100% Remote (Дистанционно)")
+            wm_idx = work_mode_opts.index(curr_wm) if curr_wm in work_mode_opts else 0
+            p_work_mode = st.selectbox("Предпочитан режим на работа", options=work_mode_opts, index=wm_idx)
+
+        p_target_pitch = st.text_area(
+            "Кариерно послание / Мотивация (Pitch)",
+            value=edit_profile.get("target_pitch", "Инженер с богат опит в разработката и автоматизацията, развиващ се в изграждането на модерни Agentic AI работни процеси и микроуслуги."),
+            height=70,
+            help="Твоят кратък пич защо се преквалифицираш – AI ще го ползва за съставяне на силни, персонализирани мотивационни писма!"
+        )
+
+        submitted = st.form_submit_button("💾 Запази профила в базата", type="primary", use_container_width=True)
         
         if submitted:
             final_data = {
                 "name": p_name,
-                "title": p_title,
+                "current_title": p_current_title,
+                "title": p_current_title,
                 "experience_years": p_exp,
                 "summary": p_summary,
-                "target_roles": [r.strip() for r in p_roles.split(",") if r.strip()],
-                "core_skills": [s.strip() for s in p_skills.split(",") if s.strip()],
-                "languages": [l.strip() for l in p_langs.split(",") if l.strip()]
+                "current_skills": [s.strip() for s in p_current_skills.split(",") if s.strip()],
+                "core_skills": [s.strip() for s in p_current_skills.split(",") if s.strip()],
+                "languages": [l.strip() for l in p_langs.split(",") if l.strip()],
+                "target_roles": [r.strip() for r in p_target_roles.split(",") if r.strip()],
+                "target_skills": [s.strip() for s in p_target_skills.split(",") if s.strip()],
+                "seniority_level": p_seniority,
+                "work_mode": p_work_mode,
+                "target_pitch": p_target_pitch
             }
             if current_user:
                 db_saved = save_user_profile(current_user["id"], {"profile_data": final_data})

@@ -30,22 +30,32 @@ class SupabaseRepository:
         """Задава текущия потребител за изолиране на данните."""
         self.user_id = user_id
 
-    def exists(self, url: str) -> bool:
-        """Проверява дали обява с такъв URL съществува в глобалния пул."""
+    def user_has_job(self, url: str) -> bool:
+        """Проверява дали обявата вече е свързана с текущия потребител."""
+        if not self.user_id:
+            return self.exists(url)
         res = self.client.table("jobs").select("id").eq("url", url).limit(1).execute()
-        return len(res.data) > 0
+        if not res.data:
+            return False
+        job_db_id = res.data[0]["id"]
+        uj_res = self.client.table("user_jobs").select("id").eq("user_id", str(self.user_id)).eq("job_id", job_db_id).limit(1).execute()
+        return len(uj_res.data) > 0
 
     def add_job(self, job: Job) -> Optional[Union[int, str]]:
         """
         Записва нова обява в глобалния пул (jobs).
         Ако потребителят е зададен, създава и първоначален запис в user_jobs.
         """
+        job_db_id = None
         if self.exists(job.url):
-            # Ако вече съществува, намираме нейния ID
-            res = self.client.table("jobs").select("id").eq("url", job.url).limit(1).execute()
-            if not res.data:
-                return None
-            job_db_id = res.data[0]["id"]
+            # Ако вече съществува в каталога, намираме нейния ID и преизползваме описанието
+            res = self.client.table("jobs").select("id, description, salary, posted_date").eq("url", job.url).limit(1).execute()
+            if res.data:
+                job_db_id = res.data[0]["id"]
+                if not job.description and res.data[0].get("description"):
+                    job.description = res.data[0]["description"]
+                if not job.salary and res.data[0].get("salary"):
+                    job.salary = res.data[0]["salary"]
         else:
             job_payload = {
                 "source": job.source,
@@ -61,9 +71,11 @@ class SupabaseRepository:
                 "scraped_at": job.scraped_at or datetime.now().isoformat()
             }
             res = self.client.table("jobs").insert(job_payload).execute()
-            if not res.data:
-                return None
-            job_db_id = res.data[0]["id"]
+            if res.data:
+                job_db_id = res.data[0]["id"]
+
+        if not job_db_id:
+            return None
 
         # Ако има текущ потребител, записваме потребителското състояние
         if self.user_id:
@@ -228,6 +240,69 @@ class SupabaseRepository:
             query = query.eq("status", "new")
         res = query.execute()
         return len(res.data)
+
+    def get_all_descriptions_for_market_analysis(self, limit: int = 100) -> List[Dict[str, str]]:
+        """Връща заглавия и описания на обяви за извличане на пазарни инсайти с Gemini."""
+        try:
+            res = (
+                self.client.table("jobs")
+                .select("id, title, company, location, description")
+                .not_.is_("description", "null")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            out = []
+            for row in (res.data or []):
+                desc = row.get("description") or ""
+                if len(desc) > 50:
+                    out.append({
+                        "id": row.get("id"),
+                        "title": row.get("title", ""),
+                        "company": row.get("company", ""),
+                        "location": row.get("location", ""),
+                        "description": desc
+                    })
+            return out
+        except Exception as e:
+            print(f"⚠️ Грешка при извличане на пазарни данни от Supabase: {e}")
+            return []
+
+    def import_catalog_jobs_to_user(self, limit: int = 100) -> int:
+        """
+        Копира/свързва наличните обяви от общия каталог `jobs` към `user_jobs`
+        за текущо логнатия потребител, ако все още не са добавени.
+        """
+        if not self.user_id:
+            return 0
+        try:
+            # Взимаме вече съществуващите за потребителя
+            existing_res = self.client.table("user_jobs").select("job_id").eq("user_id", str(self.user_id)).execute()
+            existing_ids = {r["job_id"] for r in (existing_res.data or [])}
+
+            # Взимаме обяви от глобалния каталог
+            catalog_res = self.client.table("jobs").select("id").order("created_at", desc=True).limit(limit).execute()
+            catalog_jobs = catalog_res.data or []
+
+            new_entries = []
+            now_str = datetime.now().isoformat()
+            for j in catalog_jobs:
+                jid = j["id"]
+                if jid not in existing_ids:
+                    new_entries.append({
+                        "user_id": str(self.user_id),
+                        "job_id": jid,
+                        "status": "new",
+                        "updated_at": now_str
+                    })
+
+            if new_entries:
+                res = self.client.table("user_jobs").upsert(new_entries, on_conflict="user_id,job_id").execute()
+                return len(res.data or [])
+            return 0
+        except Exception as e:
+            print(f"⚠️ Грешка при импортиране на обяви от каталога: {e}")
+            return 0
 
     def get_all_search_keywords(self) -> List[str]:
         """Уникални ключови думи в базата."""

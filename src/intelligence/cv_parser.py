@@ -6,12 +6,12 @@ from google.genai import types
 
 class CVProfileSchema(BaseModel):
     name: str = Field(description="Пълно име на кандидата (ако е налично)")
-    title: str = Field(description="Текуща или желана позиция (напр. Senior Survey Programmer, AI Engineer)")
-    summary: str = Field(description="Кратко обобщение на профила и опита (до 3 изречения)")
-    core_skills: List[str] = Field(description="Списък с ключови умения (езици за програмиране, технологии, soft skills)")
-    experience_years: int = Field(description="Общ брой години професионален опит (приблизително, число)")
-    target_roles: List[str] = Field(description="Желани позиции (напр. AI Engineer, Python Developer)")
-    languages: List[str] = Field(description="Говорими езици (напр. English, Bulgarian)")
+    current_title: str = Field(description="Настояща или последна заемана позиция от CV (напр. Senior Survey Programmer)")
+    summary: str = Field(description="Кратко обобщение на досегашния опит (до 3 изречения)")
+    current_skills: List[str] = Field(description="Списък с придобити практически умения от CV (езици, технологии)")
+    experience_years: int = Field(description="Общ брой години професионален опит (число)")
+    target_roles: List[str] = Field(default=[], description="Препоръчани или желани бъдещи роли (напр. AI Engineer, Python Developer)")
+    languages: List[str] = Field(default=[], description="Говорими езици (напр. English, Bulgarian)")
 
 
 import time
@@ -29,7 +29,7 @@ class CVAIExtractor:
         """Parses raw CV text and returns a structured dictionary matching CVProfileSchema."""
         prompt = f"""
 Ти си експерт по подбор на персонал (HR AI). Твоята задача е да анализираш следното CV и да извлечеш ключовата информация в строго структуриран формат.
-Върни САМО валиден JSON обект със следните полета: name, title, summary, core_skills, experience_years, target_roles, languages.
+Върни САМО валиден JSON обект със следните полета: name, current_title, summary, current_skills, experience_years, target_roles, languages.
 Ако някои данни липсват, остави ги празни, но се опитай да извлечеш максимално много релевантна информация.
 
 Текст от CV-то:

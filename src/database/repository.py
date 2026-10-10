@@ -267,6 +267,14 @@ class JobRepository:
             """)
             return [row[0] for row in cursor.fetchall()]
 
+    def user_has_job(self, url: str) -> bool:
+        """За локален SQLite проверява дали обявата съществува в базата."""
+        return self.exists(url)
+
+    def import_catalog_jobs_to_user(self, limit: int = 100) -> int:
+        """За локален SQLite всички обяви са вече налични."""
+        return len(self.get_all_jobs(limit=limit))
+
     def delete_job(self, job_id: int) -> bool:
         """Изтрива единична обява по ID."""
         with self._get_connection() as conn:

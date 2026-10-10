@@ -186,17 +186,18 @@ def cmd_search(
     headless: bool = False,
     max_jobs: int = 15,
     clear_new: bool = False,
-    clear_all: bool = False
+    clear_all: bool = False,
+    user_id: str = None
 ):
     """
-    Основен пайплайн: Търсене -> Дедупликация -> AI Оценка -> Запис в SQLite -> Известия.
+    Основен пайплайн: Търсене -> Дедупликация -> AI Оценка -> Запис в базата -> Известия.
     """
-    console.print(Panel.fit("[bold blue]🔍 Стартиране на търсенето за нови обяви...[/bold blue]"))
+    console.print(Panel.fit(f"[bold blue]🔍 Стартиране на търсенето за нови обяви{f' (Потребител: {user_id[:8]}...)' if user_id else ''}...[/bold blue]"))
 
     settings_mgr = SettingsManager()
     settings = settings_mgr.load()
 
-    repo = get_repository()
+    repo = get_repository(user_id=user_id)
 
     if clear_all:
         cnt = repo.delete_all_jobs(only_new=False)
@@ -211,12 +212,31 @@ def cmd_search(
     keywords = settings.search.keywords
     actual_max_jobs = max_jobs if max_jobs != 15 else settings.search.max_jobs_per_source
 
+    # Зареждане на персонализирани потребителски настройки от Supabase (ако има user_id)
+    user_profile = {}
+    if user_id:
+        try:
+            from src.auth import load_user_profile
+            user_profile = load_user_profile(user_id)
+            if user_profile.get("keywords") and isinstance(user_profile["keywords"], list) and user_profile["keywords"]:
+                keywords = user_profile["keywords"]
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Забележка при зареждане на потребителски настройки: {e}[/yellow]")
+
+    user_key = user_profile.get("gemini_api_key")
+    user_model = user_profile.get("gemini_model")
+    user_data = user_profile.get("profile_data")
+
     if sources != ["all"]:
         active_sources = sources
     else:
         active_sources = settings_mgr.enabled_sources()
 
-    analyzer = GeminiJobAnalyzer()
+    analyzer = GeminiJobAnalyzer(
+        api_key=user_key,
+        model_name=user_model,
+        profile_data=user_data
+    )
     discord = DiscordNotifier()
     telegram = TelegramNotifier()
     browser_mgr = BrowserManager(headless=headless)
@@ -251,25 +271,25 @@ def cmd_search(
             found = scraper.search(keywords=keywords, max_jobs=actual_max_jobs)
 
             for job in found:
-                # 1. Дедупликация
-                if repo.exists(job.url):
+                # 1. Дедупликация: ако обявата вече е свързана с текущия потребител, прескачаме
+                if repo.user_has_job(job.url):
                     continue
 
                 console.print(f"📄 Нова позиция: [bold]{job.title}[/bold] @ {job.company}")
 
-                # 2. Извличане на детайлно описание
-                details = scraper.extract_job_details(job.url)
-                job.description = details.get("description", "")
-                if details.get("salary"):
-                    job.salary = details["salary"]
-                if details.get("posted_date"):
-                    job.posted_date = details["posted_date"]
+                # 2. Извличане на детайлно описание само ако обявата я няма в глобалния каталог
+                if not repo.exists(job.url):
+                    details = scraper.extract_job_details(job.url)
+                    job.description = details.get("description", "")
+                    if details.get("salary"):
+                        job.salary = details["salary"]
+                    if details.get("posted_date"):
+                        job.posted_date = details["posted_date"]
 
-                # Ако има заплата, да я поставим на челно място в описанието
-                if job.salary and not (job.description or "").startswith("💰 Обявена заплата:"):
-                    job.description = f"💰 Обявена заплата: {job.salary}\n\n" + (job.description or "")
+                    if job.salary and not (job.description or "").startswith("💰 Обявена заплата:"):
+                        job.description = f"💰 Обявена заплата: {job.salary}\n\n" + (job.description or "")
 
-                # 3. Запис в SQLite
+                # 3. Запис в базата данни (в jobs и в user_jobs за текущия потребител)
                 job_id = repo.add_job(job)
                 if not job_id:
                     continue
@@ -392,6 +412,7 @@ def main():
     parser.add_argument("--sources", nargs="+", default=["all"], help="Източници (dev.bg, jobs.bg, linkedin или all)")
     parser.add_argument("--headless", action="store_true", help="Пуска браузъра в скрит режим")
     parser.add_argument("--max-jobs", type=int, default=15, help="Максимален брой обяви на източник за едно пускане")
+    parser.add_argument("--user-id", type=str, default=None, help="ID на потребителя за изолирано записване в Supabase")
 
     args = parser.parse_args()
 
@@ -413,7 +434,8 @@ def main():
             headless=args.headless,
             max_jobs=args.max_jobs,
             clear_new=args.clear_new,
-            clear_all=args.clear_all
+            clear_all=args.clear_all,
+            user_id=args.user_id
         )
     else:
         parser.print_help()
