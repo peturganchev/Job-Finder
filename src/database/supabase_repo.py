@@ -30,6 +30,11 @@ class SupabaseRepository:
         """Задава текущия потребител за изолиране на данните."""
         self.user_id = user_id
 
+    def exists(self, url: str) -> bool:
+        """Проверява дали обява с такъв URL съществува в глобалния каталог jobs."""
+        res = self.client.table("jobs").select("id").eq("url", url).limit(1).execute()
+        return len(res.data) > 0
+
     def user_has_job(self, url: str) -> bool:
         """Проверява дали обявата вече е свързана с текущия потребител."""
         if not self.user_id:
@@ -133,6 +138,44 @@ class SupabaseRepository:
         }
         res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
         return len(res.data) > 0
+
+    def mark_as_notified(self, job_id: Union[int, str]) -> bool:
+        """Маркира обявата като успешно изпратена в Discord/Telegram за текущия потребител."""
+        if not self.user_id:
+            return False
+        payload = {
+            "user_id": str(self.user_id),
+            "job_id": str(job_id),
+            "notified": True,
+            "notified_at": datetime.now().isoformat()
+        }
+        res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
+        return len(res.data) > 0
+
+    def get_jobs_without_ai_analysis(self) -> List[Job]:
+        """Връща обяви, които нямат Gemini AI анализ или имат само базов евристичен анализ."""
+        if not self.user_id:
+            return []
+        try:
+            res = self.client.table("user_jobs").select("*, jobs(*)").eq("user_id", str(self.user_id)).is_("match_score", "null").limit(100).execute()
+            jobs = []
+            for item in res.data:
+                job_data = item.get("jobs")
+                if not job_data:
+                    continue
+                job_data["id"] = item["job_id"]
+                job_data["status"] = item.get("status", "new")
+                jobs.append(self._format_job(job_data))
+            return jobs
+        except Exception as e:
+            print(f"⚠️ Грешка при извличане на обяви без AI анализ: {e}")
+            return []
+
+    def get_all_jobs_for_reanalysis(self) -> List[Job]:
+        """Връща всички обяви на потребителя за цялостно преоценяване."""
+        if not self.user_id:
+            return []
+        return self.get_all_jobs(limit=500)
 
     def get_job_by_id(self, job_id: Union[int, str]) -> Optional[Job]:
         """Връща обява по ID."""

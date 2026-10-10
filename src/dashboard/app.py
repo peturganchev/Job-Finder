@@ -147,9 +147,17 @@ analyzer = GeminiJobAnalyzer(
 )
 insights_gen = MarketInsightsGenerator(repo, analyzer)
 
-# Заглавие
-st.title("🤖 Job Finder & Market Intelligence")
-st.caption("Автономен център за наблюдение на Agentic AI & Python позиции в София и Remote")
+# Заглавие и профил
+col_head_title, col_head_user = st.columns([3, 1])
+with col_head_title:
+    st.title("🤖 Job Finder & Market Intelligence")
+    st.caption("Автономен център за наблюдение на Agentic AI & Python позиции в София и Remote")
+with col_head_user:
+    if current_user:
+        st.write("")
+        st.markdown(f"👤 **{current_user.get('email')}**")
+        if st.button("🚪 Изход от профила", key="btn_top_logout", use_container_width=True):
+            sign_out_user()
 
 # Метрики в горната част
 stats = repo.get_stats()
@@ -182,55 +190,13 @@ def extract_salary_num(salary_str: Optional[str]) -> Optional[int]:
         return max(int(n) for n in nums)
     return None
 
-# Страничен панел с профил и филтри
+# Страничен панел (за десктоп)
 if current_user:
     st.sidebar.markdown(f"👤 **{current_user.get('email')}**")
-    if st.sidebar.button("🚪 Изход от профила", use_container_width=True):
+    if st.sidebar.button("🚪 Изход от профила", key="btn_sidebar_logout", use_container_width=True):
         sign_out_user()
     st.sidebar.markdown("---")
-
-st.sidebar.header("🔍 Филтри")
-
-status_filter = st.sidebar.selectbox(
-    "Статус на кандидатстване",
-    options=["Всички"] + [s.value for s in ApplicationStatus],
-    index=0
-)
-
-source_filter = st.sidebar.selectbox(
-    "Източник",
-    options=["Всички", "dev.bg", "jobs.bg", "linkedin", "himalayas", "euremotejobs", "hackernews"],
-    index=0
-)
-
-# Филтър по ключова дума на търсене
-all_saved_keywords = repo.get_all_search_keywords()
-keyword_options = ["Всички"] + all_saved_keywords
-keyword_filter = st.sidebar.selectbox(
-    "🔑 Ключова дума (Позиция)",
-    options=keyword_options,
-    index=0,
-    help="Филтрира обявите според конкретното търсене, с което са били намерени."
-)
-
-min_score = st.sidebar.slider("🎯 Минимално AI съвпадение (%)", 0, 100, 30)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("💰 Филтър по заплата")
-only_with_salary = st.sidebar.checkbox("Само с обявена заплата", value=False)
-min_salary = st.sidebar.number_input(
-    "Минимална сума (EUR / BGN)",
-    min_value=0,
-    max_value=20000,
-    value=0,
-    step=250,
-    help="Филтрира обяви, чиято посочена заплата достига или надвишава тази стойност."
-)
-
-search_query = st.sidebar.text_input("Търси по заглавие или компания", "")
-
-st.sidebar.markdown("---")
-only_remote = st.sidebar.checkbox("🌐 Само Remote", value=False, help="Показва само обяви, които са дистанционни")
+st.sidebar.info("💡 Филтрите за обявите вече се намират директно в таб **📋 Списък с обяви** за лесен достъп от телефон и компютър.")
 
 # Табове в основния екран
 tab1, tab_search, tab2, tab3, tab4, tab5, tab_settings = st.tabs([
@@ -244,6 +210,49 @@ tab1, tab_search, tab2, tab3, tab4, tab5, tab_settings = st.tabs([
 ])
 
 with tab1:
+    with st.expander("🎛️ Филтри и търсене в обявите", expanded=True):
+        col_f1, col_f2, col_f3 = st.columns([2, 1, 1])
+        with col_f1:
+            search_query = st.text_input("🔍 Търси по заглавие или компания", "", placeholder="напр. AI Engineer, Python, Strypes...")
+            row_chk1, row_chk2 = st.columns(2)
+            with row_chk1:
+                only_remote = st.checkbox("🌐 Само Remote", value=False, help="Показва само обяви, които са дистанционни")
+            with row_chk2:
+                only_with_salary = st.checkbox("💰 Само с обявена заплата", value=False)
+        with col_f2:
+            status_filter = st.selectbox(
+                "📌 Статус на кандидатстване",
+                options=["Всички"] + [s.value for s in ApplicationStatus],
+                index=0
+            )
+            all_saved_keywords = repo.get_all_search_keywords()
+            keyword_options = ["Всички"] + all_saved_keywords
+            keyword_filter = st.selectbox(
+                "🔑 Ключова дума (Позиция)",
+                options=keyword_options,
+                index=0,
+                help="Филтрира обявите според конкретното търсене, с което са били намерени."
+            )
+        with col_f3:
+            source_filter = st.selectbox(
+                "🌐 Източник",
+                options=["Всички", "dev.bg", "jobs.bg", "linkedin", "himalayas", "euremotejobs", "hackernews"],
+                index=0
+            )
+            min_score = st.slider("🎯 Мин. AI съвпадение (%)", 0, 100, 30)
+
+        if only_with_salary:
+            min_salary = st.number_input(
+                "Минимална сума на заплатата (EUR / BGN)",
+                min_value=0,
+                max_value=20000,
+                value=0,
+                step=250,
+                help="Филтрира обяви, чиято посочена заплата достига или надвишава тази стойност."
+            )
+        else:
+            min_salary = 0
+
     selected_status = None if status_filter == "Всички" else status_filter
     selected_source = None if source_filter == "Всички" else source_filter
     selected_kw = None if keyword_filter == "Всички" else keyword_filter
