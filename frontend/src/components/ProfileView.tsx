@@ -96,43 +96,61 @@ export const ProfileView: React.FC = () => {
     }
   };
 
-  // Add tag helpers
+  // Add tag helpers with multi-item (comma, semicolon, newline) splitting
+  const addSkillsList = (rawInput: string) => {
+    const pieces = rawInput
+      .split(/[\n,;]+/)
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+    if (pieces.length === 0) return;
+    setSkills((prev) => Array.from(new Set([...prev, ...pieces])));
+    setNewSkill('');
+  };
+
   const handleAddSkill = (e: React.KeyboardEvent | React.MouseEvent) => {
     if ('key' in e && e.key !== 'Enter') return;
     e.preventDefault();
-    const val = newSkill.trim();
-    if (val && !skills.includes(val)) {
-      setSkills([...skills, val]);
-      setNewSkill('');
-    }
+    addSkillsList(newSkill);
   };
 
   const handleRemoveSkill = (skillToRemove: string) => {
     setSkills(skills.filter((s) => s !== skillToRemove));
   };
 
+  const addRolesList = (rawInput: string) => {
+    const pieces = rawInput
+      .split(/[\n,;]+/)
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+    if (pieces.length === 0) return;
+    setTargetRoles((prev) => Array.from(new Set([...prev, ...pieces])));
+    setNewRole('');
+  };
+
   const handleAddRole = (e: React.KeyboardEvent | React.MouseEvent) => {
     if ('key' in e && e.key !== 'Enter') return;
     e.preventDefault();
-    const val = newRole.trim();
-    if (val && !targetRoles.includes(val)) {
-      setTargetRoles([...targetRoles, val]);
-      setNewRole('');
-    }
+    addRolesList(newRole);
   };
 
   const handleRemoveRole = (roleToRemove: string) => {
     setTargetRoles(targetRoles.filter((r) => r !== roleToRemove));
   };
 
+  const addLanguagesList = (rawInput: string) => {
+    const pieces = rawInput
+      .split(/[\n,;]+/)
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+    if (pieces.length === 0) return;
+    setLanguages((prev) => Array.from(new Set([...prev, ...pieces])));
+    setNewLanguage('');
+  };
+
   const handleAddLanguage = (e: React.KeyboardEvent | React.MouseEvent) => {
     if ('key' in e && e.key !== 'Enter') return;
     e.preventDefault();
-    const val = newLanguage.trim();
-    if (val && !languages.includes(val)) {
-      setLanguages([...languages, val]);
-      setNewLanguage('');
-    }
+    addLanguagesList(newLanguage);
   };
 
   const handleRemoveLanguage = (langToRemove: string) => {
@@ -353,19 +371,27 @@ export const ProfileView: React.FC = () => {
               </span>
             ))}
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
               <input
                 type="text"
                 value={newSkill}
                 onChange={(e) => setNewSkill(e.target.value)}
                 onKeyDown={handleAddSkill}
-                placeholder="+ Добави умение..."
-                className="bg-transparent border-none text-xs text-white placeholder-slate-500 outline-none w-32 px-1"
+                onPaste={(e) => {
+                  const text = e.clipboardData.getData('text');
+                  if (text && (text.includes(',') || text.includes('\n') || text.includes(';'))) {
+                    e.preventDefault();
+                    addSkillsList(text);
+                  }
+                }}
+                placeholder="+ Добави умение или пейстни със запетаи..."
+                className="bg-transparent border-none text-xs text-white placeholder-slate-500 outline-none w-full px-1"
               />
               {newSkill.trim() && (
                 <button
+                  type="button"
                   onClick={handleAddSkill}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 transition"
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 transition shrink-0"
                 >
                   <Plus className="w-3 h-3" />
                 </button>
@@ -374,13 +400,31 @@ export const ProfileView: React.FC = () => {
           </div>
         </div>
 
-        {/* Target Roles Tags */}
+        {/* Target Roles Tags with Presets from profile.yaml */}
         <div className="pt-4 border-t border-slate-800/80 space-y-3">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <label className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-teal-400" />
               <span>Търсени Роли ({targetRoles.length})</span>
             </label>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                'Agentic AI Engineer',
+                'AI Engineer',
+                'LLM Application Developer',
+                'GenAI Engineer',
+                'Python AI Developer',
+              ].map((rolePreset) => (
+                <button
+                  key={rolePreset}
+                  type="button"
+                  onClick={() => addRolesList(rolePreset)}
+                  className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 hover:bg-teal-500/20 hover:text-white transition"
+                >
+                  + {rolePreset}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-2 p-3 rounded-xl bg-slate-950 border border-slate-800 min-h-[50px] items-center">
@@ -391,6 +435,7 @@ export const ProfileView: React.FC = () => {
               >
                 <span>{role}</span>
                 <button
+                  type="button"
                   onClick={() => handleRemoveRole(role)}
                   className="hover:text-white transition"
                 >
@@ -399,19 +444,27 @@ export const ProfileView: React.FC = () => {
               </span>
             ))}
 
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
               <input
                 type="text"
                 value={newRole}
                 onChange={(e) => setNewRole(e.target.value)}
                 onKeyDown={handleAddRole}
-                placeholder="+ Добави роля..."
-                className="bg-transparent border-none text-xs text-white placeholder-slate-500 outline-none w-32 px-1"
+                onPaste={(e) => {
+                  const text = e.clipboardData.getData('text');
+                  if (text && (text.includes(',') || text.includes('\n') || text.includes(';'))) {
+                    e.preventDefault();
+                    addRolesList(text);
+                  }
+                }}
+                placeholder="+ Добави роля или пейстни със запетаи..."
+                className="bg-transparent border-none text-xs text-white placeholder-slate-500 outline-none w-full px-1"
               />
               {newRole.trim() && (
                 <button
+                  type="button"
                   onClick={handleAddRole}
-                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-teal-400 transition"
+                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-teal-400 transition shrink-0"
                 >
                   <Plus className="w-3 h-3" />
                 </button>
