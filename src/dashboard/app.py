@@ -484,7 +484,8 @@ with tab_search:
         st.markdown("---")
         st.markdown("### ▶️ Стартиране")
         
-        if settings_mgr.get_api_key_source() == "none":
+        active_search_key = (user_profile.get("gemini_api_key") if current_user else None) or settings_mgr.get_api_key()
+        if not active_search_key:
             st.warning("⚠️ Не е конфигуриран Gemini API ключ. Оценките ще бъдат базови (евристични). Добави ключ в таб ⚙️ Настройки.")
             
         lock_file = Path("data/.search.lock")
@@ -657,7 +658,7 @@ with tab2:
         if current_user:
             save_user_profile(current_user["id"], {"roadmap_progress": new_progress})
             user_profile["roadmap_progress"] = new_progress
-        st.success("Прогресът е запазен успешно в Supabase!")
+        st.success("Прогресът е запазен успешно!")
         import time; time.sleep(0.5)
         st.rerun()
 
@@ -963,17 +964,19 @@ with tab_settings:
         use_hackernews = st.checkbox("HackerNews", value=settings.sources.hackernews)
         
     st.markdown("### 🧠 Google Gemini AI")
-    api_source = settings_mgr.get_api_key_source()
-    if api_source == "settings":
-        source_msg = "Активен ключ от **настройките**."
-    elif api_source == "env":
+    current_key = (user_profile.get("gemini_api_key") if current_user else None) or settings_mgr.get_api_key()
+
+    if current_user and user_profile.get("gemini_api_key"):
+        source_msg = "Активен ключ от **твоя потребителски профил**."
+    elif settings_mgr.get_api_key_source() == "settings":
+        source_msg = "Активен ключ от **локалните настройки**."
+    elif settings_mgr.get_api_key_source() == "env":
         source_msg = "Активен ключ от **.env** файла."
     else:
         source_msg = "⚠️ Липсва API ключ."
         
     st.caption(f"Статус на ключа: {source_msg}")
     
-    current_key = (user_profile.get("gemini_api_key") if current_user else None) or settings_mgr.get_api_key()
     current_masked = settings_mgr.mask_key(current_key)
     
     new_key = st.text_input("Gemini API Key (Google AI Studio)", value="", type="password", placeholder=f"Текущ: {current_masked}")
@@ -1007,6 +1010,7 @@ with tab_settings:
         if st.button("💾 Запази ключ"):
             if current_user:
                 save_user_profile(current_user["id"], {"gemini_api_key": new_key})
+                user_profile["gemini_api_key"] = new_key
             settings_mgr.set_api_key(new_key)
             st.success("Ключът е запазен!")
             import time; time.sleep(0.5)
@@ -1015,6 +1019,7 @@ with tab_settings:
         if st.button("🗑️ Изтрий ключ"):
             if current_user:
                 save_user_profile(current_user["id"], {"gemini_api_key": None})
+                user_profile["gemini_api_key"] = None
             settings_mgr.set_api_key(None)
             st.success("Ключът е изтрит от настройките.")
             import time; time.sleep(0.5)
