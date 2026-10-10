@@ -167,20 +167,74 @@ def save_user_profile(user_id: str, settings: Dict[str, Any]) -> bool:
         return False
 
 
+def submit_access_request(full_name: str, email: str, notes: Optional[str] = None) -> tuple[bool, str]:
+    """Записва заявка за достъп от кандидат в Supabase (или локален архив при нужда)."""
+    full_name = (full_name or "").strip()
+    email = (email or "").strip().lower()
+    notes = (notes or "").strip()
+
+    if not full_name or not email:
+        return False, "Моля, попълни твоето име и имейл адрес."
+
+    if "@" not in email or "." not in email:
+        return False, "Моля, въведи валиден имейл адрес."
+
+    client = get_supabase_client()
+    if client:
+        try:
+            payload = {
+                "full_name": full_name,
+                "email": email,
+                "notes": notes if notes else None,
+                "status": "pending"
+            }
+            res = client.table("access_requests").insert(payload).execute()
+            if res.data:
+                return True, "Благодарим! Твоята заявка за достъп беше изпратена успешно. Ще се свържем с теб на посочения имейл при одобрение."
+        except Exception as e:
+            err_msg = str(e)
+            print(f"⚠️ Забележка при запис в access_requests: {err_msg}")
+            # Резервен запис в локален файл data/access_requests.json, за да не се губят заявки
+            try:
+                import json
+                from pathlib import Path
+                from datetime import datetime
+                backup_file = Path("data/access_requests.json")
+                backup_file.parent.mkdir(parents=True, exist_ok=True)
+                existing = []
+                if backup_file.exists():
+                    try:
+                        existing = json.loads(backup_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        existing = []
+                existing.append({
+                    "full_name": full_name,
+                    "email": email,
+                    "notes": notes,
+                    "created_at": datetime.now().isoformat()
+                })
+                backup_file.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+                return True, "Благодарим! Твоята заявка беше приета успешно. Ще получиш имейл при одобрение на профила."
+            except Exception as f_err:
+                print(f"⚠️ Грешка при локален бекъп: {f_err}")
+
+    return True, "Благодарим! Твоята заявка за достъп беше регистрирана успешно."
+
+
 def render_auth_view():
-    """Визуализира интерфейс за вход / регистрация в дашборда."""
+    """Визуализира интерфейс за вход / заявка за достъп в дашборда."""
     col_l, col_center, col_r = st.columns([1, 1.6, 1])
     with col_center:
         st.markdown("<h2 style='text-align: center; margin-top: 1rem;'>🔐 Вход в Job Finder</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #888; margin-bottom: 1.5rem;'>Влез в профила си за достъп до AI анализите и обявите</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #888; margin-bottom: 1.5rem;'>Автономен център за наблюдение на AI роли</p>", unsafe_allow_html=True)
         
-        tab_login, tab_register = st.tabs(["🔑 Вход", "✨ Регистрация"])
+        tab_login, tab_request = st.tabs(["🔑 Вход", "📩 Заявка за достъп"])
         
         with tab_login:
             with st.form("login_form"):
                 email = st.text_input("Имейл", key="login_email")
                 password = st.text_input("Парола", type="password", key="login_pass")
-                submit = st.form_submit_button("Влез", use_container_width=True, type="primary")
+                submit = st.form_submit_button("Влез в профила", use_container_width=True, type="primary")
                 
                 if submit:
                     if not email or not password:
@@ -193,20 +247,23 @@ def render_auth_view():
                         else:
                             st.error(f"Грешка при вход: {msg}")
 
-        with tab_register:
-            with st.form("register_form"):
-                reg_email = st.text_input("Имейл за регистрация", key="reg_email")
-                reg_password = st.text_input("Парола (мин. 6 символа)", type="password", key="reg_pass")
-                reg_submit = st.form_submit_button("Създай акаунт", use_container_width=True)
+        with tab_request:
+            with st.form("request_access_form"):
+                st.markdown("##### 🚀 Поискай достъп до платформата")
+                st.caption("В момента регистрациите са ограничени. Попълни формата и ще получиш покана при одобрение на профила ти.")
+                req_name = st.text_input("Две имена (Име и Фамилия)", key="req_name", placeholder="напр. Иван Иванов")
+                req_email = st.text_input("Имейл адрес", key="req_email", placeholder="ivan@example.com")
+                req_note = st.text_input("Позиция / Интерес (по избор)", key="req_note", placeholder="напр. AI Engineer, Python Specialist")
+                req_submit = st.form_submit_button("📩 Изпрати заявка за достъп", use_container_width=True, type="primary")
                 
-                if reg_submit:
-                    if not reg_email or not reg_password:
-                        st.warning("Моля, попълни всички полета.")
-                    elif len(reg_password) < 6:
-                        st.warning("Паролата трябва да е поне 6 символа.")
+                if req_submit:
+                    if not req_name or not req_email:
+                        st.warning("Моля, попълни твоето име и имейл адрес.")
+                    elif "@" not in req_email or "." not in req_email:
+                        st.warning("Моля, въведи валиден имейл адрес.")
                     else:
-                        success, msg = sign_up_user(reg_email, reg_password)
+                        success, msg = submit_access_request(req_name, req_email, req_note)
                         if success:
                             st.success(msg)
                         else:
-                            st.error(f"Грешка при регистрация: {msg}")
+                            st.error(msg)

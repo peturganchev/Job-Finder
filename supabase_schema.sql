@@ -192,3 +192,33 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 8. Таблица 'access_requests' за форма за заявка за достъп / списък на чакащи (Waitlist)
+CREATE TABLE IF NOT EXISTS public.access_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Индекси
+CREATE INDEX IF NOT EXISTS idx_access_requests_email ON public.access_requests(email);
+CREATE INDEX IF NOT EXISTS idx_access_requests_status ON public.access_requests(status);
+CREATE INDEX IF NOT EXISTS idx_access_requests_created_at ON public.access_requests(created_at DESC);
+
+-- RLS за 'access_requests'
+ALTER TABLE public.access_requests ENABLE ROW LEVEL SECURITY;
+
+-- Всеки (включително нелогнати потребители през anon key) може да изпраща заявка (INSERT)
+CREATE POLICY "Allow public insert on access_requests"
+    ON public.access_requests FOR INSERT
+    TO anon, authenticated
+    WITH CHECK (true);
+
+-- Логнати потребители могат да виждат списъка със заявки
+CREATE POLICY "Allow authenticated read access_requests"
+    ON public.access_requests FOR SELECT
+    TO authenticated
+    USING (true);
