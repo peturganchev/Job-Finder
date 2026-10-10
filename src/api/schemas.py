@@ -164,3 +164,41 @@ class StandardMessageResponse(BaseModel):
     success: bool
     message: str
     data: Optional[Any] = None
+
+
+class SettingsResponse(BaseModel):
+    gemini_api_key_masked: Optional[str] = None
+    gemini_model: str = "gemini-3.5-flash"
+    available_models: List[str] = Field(default_factory=list)
+    blacklist_title: List[str] = Field(default_factory=list)
+    blacklist_companies: List[str] = Field(default_factory=list)
+    search_keywords: List[str] = Field(default_factory=list)
+    active_sources: List[str] = Field(default_factory=list)
+    max_jobs_per_source: int = 15
+    location: str = "Bulgaria"
+    remote_location: str = "Worldwide"
+    roadmap_progress: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SettingsUpdateRequest(BaseModel):
+    gemini_api_key: Optional[str] = None
+    gemini_model: Optional[str] = None
+    blacklist_title: Optional[List[str]] = None
+    blacklist_companies: Optional[List[str]] = None
+    search_keywords: Optional[List[str]] = None
+    active_sources: Optional[List[str]] = None
+    max_jobs_per_source: Optional[int] = None
+    location: Optional[str] = None
+    remote_location: Optional[str] = None
+    roadmap_progress: Optional[Dict[str, Any]] = None
+
+
+class GeminiVerifyRequest(BaseModel):
+    api_key: str = Field(..., description="Google Gemini API Key to verify")
+
+
+class GeminiVerifyResponse(BaseModel):
+    valid: bool
+    models: List[str] = Field(default_factory=list)
+    message: str
+

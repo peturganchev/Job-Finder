@@ -227,3 +227,78 @@ export async function apiFetchMarketStats(): Promise<MarketStats> {
   }
   return res.json();
 }
+
+export interface SettingsData {
+  gemini_api_key_masked?: string | null;
+  gemini_model: string;
+  available_models: string[];
+  blacklist_title: string[];
+  blacklist_companies: string[];
+  search_keywords: string[];
+  active_sources: string[];
+  max_jobs_per_source: number;
+  location: string;
+  remote_location: string;
+  roadmap_progress: Record<string, unknown>;
+}
+
+export interface GeminiVerifyResponse {
+  valid: boolean;
+  models: string[];
+  message: string;
+}
+
+/** Fetch user settings */
+export async function apiGetSettings(token?: string | null): Promise<SettingsData> {
+  const url = `${API_BASE_URL}/api/settings`;
+  const res = await fetch(url, { headers: getHeaders(token) });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch settings: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+/** Update user settings */
+export async function apiUpdateSettings(
+  payload: {
+    gemini_api_key?: string | null;
+    gemini_model?: string;
+    blacklist_title?: string[];
+    blacklist_companies?: string[];
+    search_keywords?: string[];
+    active_sources?: string[];
+    max_jobs_per_source?: number;
+    location?: string;
+    remote_location?: string;
+    roadmap_progress?: Record<string, unknown>;
+  },
+  token?: string | null
+): Promise<{ success: boolean; message: string }> {
+  const url = `${API_BASE_URL}/api/settings`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to update settings');
+  }
+  return res.json();
+}
+
+/** Verify a Gemini API Key */
+export async function apiVerifyGeminiKey(apiKey: string): Promise<GeminiVerifyResponse> {
+  const url = `${API_BASE_URL}/api/settings/verify-gemini`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ api_key: apiKey }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Failed to verify key');
+  }
+  return res.json();
+}
+

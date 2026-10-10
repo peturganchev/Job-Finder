@@ -34,6 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'search', label: 'Търсене & Скрапване' },
     { id: 'profile', label: 'CV & Профил' },
     { id: 'insights', label: 'Пазарен Анализ' },
+    { id: 'settings', label: 'Настройки' },
   ];
 
   return (

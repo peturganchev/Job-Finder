@@ -197,6 +197,32 @@ def test_search_task_flow():
     print("✅ GET /api/search/tasks passed")
 
 
+def test_settings_flow():
+    """Test reading settings, updating settings, and verifying Gemini key."""
+    # 1. GET /api/settings
+    res = client.get("/api/settings")
+    assert res.status_code == 200, f"Expected 200, got {res.status_code}"
+    data = res.json()
+    assert "gemini_model" in data
+    assert "blacklist_title" in data
+    assert "search_keywords" in data
+    print(f"✅ GET /api/settings passed (Model: {data['gemini_model']}, Titles in blacklist: {len(data['blacklist_title'])})")
+
+    # 2. POST /api/settings
+    update_res = client.post("/api/settings", json={"location": "Sofia, Bulgaria"})
+    assert update_res.status_code == 200
+    assert update_res.json()["success"] is True
+    print("✅ POST /api/settings passed")
+
+    # 3. POST /api/settings/verify-gemini
+    verify_res = client.post("/api/settings/verify-gemini", json={"api_key": "invalid_test_key"})
+    assert verify_res.status_code == 200
+    verify_data = verify_res.json()
+    assert verify_data["valid"] is False
+    assert "Грешка" in verify_data["message"]
+    print("✅ POST /api/settings/verify-gemini passed (Validation handled gracefully)")
+
+
 def run_all_tests():
     print("=" * 60)
     print("🚀 Starting Job-Finder v2 FastAPI Endpoint Verification")
@@ -212,11 +238,13 @@ def run_all_tests():
     test_cv_parse_form()
     test_cover_letter()
     test_search_task_flow()
+    test_settings_flow()
 
     print("=" * 60)
-    print("🎉 All 10 test suites executed and passed successfully!")
+    print("🎉 All 11 test suites executed and passed successfully!")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     run_all_tests()
+
