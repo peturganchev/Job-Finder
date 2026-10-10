@@ -14,19 +14,12 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
 from src.database.repository import get_repository
 from src.database.models import ApplicationStatus
-try:
-    from src.intelligence.gemini_analyzer import GeminiJobAnalyzer, get_available_gemini_models
-except (ImportError, AttributeError):
-    import importlib
-    import src.intelligence.gemini_analyzer as _ga_mod
-    importlib.reload(_ga_mod)
-    GeminiJobAnalyzer = getattr(_ga_mod, "GeminiJobAnalyzer")
-    get_available_gemini_models = getattr(
-        _ga_mod,
-        "get_available_gemini_models",
-        lambda api_key=None: ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-pro", "antigravity-preview-latest"]
-    )
+from src.intelligence.gemini_analyzer import GeminiJobAnalyzer, get_available_gemini_models
 from src.intelligence.market_insights import MarketInsightsGenerator
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_cached_gemini_models(api_key: str = ""):
+    return get_available_gemini_models(api_key)
 from src.settings_manager import SettingsManager
 from src.validator import JobValidator
 from src.auth import (
@@ -79,9 +72,11 @@ st.markdown("""
     
     /* Оптимизиран отстъп на съдържанието */
     .block-container {
-        padding-top: 1.5rem !important;
-        padding-bottom: 2rem !important;
-        max-width: 95% !important;
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 100% !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -835,13 +830,16 @@ with tab5:
                 "languages": [l.strip() for l in p_langs.split(",") if l.strip()]
             }
             if current_user:
-                save_user_profile(current_user["id"], {"profile_data": final_data})
-                # Clear draft so it doesn't override future visits unnecessarily
-                if "draft_profile" in st.session_state:
-                    del st.session_state["draft_profile"]
-                st.success("Профилът ти е запазен успешно и ще се ползва за всички бъдещи анализи!")
-                import time; time.sleep(1)
-                st.rerun()
+                db_saved = save_user_profile(current_user["id"], {"profile_data": final_data})
+                if db_saved:
+                    # Clear draft so it doesn't override future visits unnecessarily
+                    if "draft_profile" in st.session_state:
+                        del st.session_state["draft_profile"]
+                    st.success("Профилът ти е запазен успешно и ще се ползва за всички бъдещи анализи!")
+                    import time; time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Възникна грешка при запазване в базата. Вероятно сесията ти е изтекла. Моля, излез и влез отново в профила си.")
             else:
                 st.error("Трябва да си влязъл в профила си, за да запазваш.")
 
@@ -890,7 +888,7 @@ with tab_settings:
         
     # Динамично извличане на достъпните модели за активния ключ
     active_key_to_query = (user_profile.get("gemini_api_key") if current_user else None) or settings_mgr.get_api_key()
-    available_models = get_available_gemini_models(active_key_to_query)
+    available_models = list(get_cached_gemini_models(active_key_to_query or ""))
     
     if current_saved_model not in available_models:
         available_models.insert(0, current_saved_model)
@@ -958,4 +956,4 @@ with tab_settings:
                 import time; time.sleep(0.8)
                 st.rerun()
             else:
-                st.warning("Настройките са запазени локално, но възникна грешка при синхронизацията със Supabase (виж съобщението за грешка по-горе).")
+                st.error("Възникна грешка при запазване в базата. Вероятно сесията ти е изтекла. Моля, излез и влез отново в профила си.")

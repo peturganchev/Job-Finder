@@ -138,6 +138,7 @@ class GeminiJobAnalyzer:
         else:
             self.model_name = raw_model
         self.profile = profile_data or load_profile()
+        self.api_key = api_key or sm.get_api_key()
         self.client = None
 
         if self.api_key and genai:
