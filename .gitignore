@@ -40,3 +40,7 @@ downloaded_files/
 
 # Antigravity local agent workspace & skills
 .agents/
+
+# Binaries
+cloudflared.exe
+
