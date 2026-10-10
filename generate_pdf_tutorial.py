@@ -1,0 +1,406 @@
+import os
+from pathlib import Path
+from playwright.sync_api import sync_playwright
+
+html_content = """<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <title>Job Finder AI — Ръководство за потребителя</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+        @page {
+            size: A4;
+            margin: 12mm 14mm 14mm 14mm;
+            @bottom-right {
+                content: counter(page);
+                font-family: 'Inter', sans-serif;
+                font-size: 8.5pt;
+                color: #94a3b8;
+            }
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #1e293b;
+            background: #ffffff;
+            line-height: 1.5;
+            font-size: 9.5pt;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Header Banner */
+        .header-box {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 55%, #312e81 100%);
+            color: #ffffff;
+            border-radius: 12px;
+            padding: 22px 26px;
+            margin-bottom: 18px;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+        }
+
+        .header-badge {
+            display: inline-block;
+            background: rgba(99, 102, 241, 0.25);
+            border: 1px solid rgba(165, 180, 252, 0.4);
+            color: #c7d2fe;
+            font-size: 8pt;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 3px 10px;
+            border-radius: 9999px;
+            margin-bottom: 8px;
+        }
+
+        .header-title {
+            font-size: 19pt;
+            font-weight: 800;
+            margin: 0 0 4px 0;
+            letter-spacing: -0.5px;
+            color: #ffffff;
+        }
+
+        .header-subtitle {
+            font-size: 10pt;
+            color: #cbd5e1;
+            margin: 0;
+            font-weight: 400;
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            font-size: 8.5pt;
+        }
+
+        .meta-item strong {
+            color: #93c5fd;
+            display: block;
+            font-size: 7.5pt;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+
+        /* Section Cards */
+        .section-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 14px 18px;
+            margin-bottom: 14px;
+            page-break-inside: avoid;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+
+        h2 {
+            font-size: 12.5pt;
+            font-weight: 700;
+            color: #0f172a;
+            margin-top: 0;
+            margin-bottom: 8px;
+            padding-bottom: 5px;
+            border-bottom: 2px solid #e0e7ff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        h3 {
+            font-size: 10pt;
+            font-weight: 600;
+            color: #334155;
+            margin: 10px 0 5px 0;
+        }
+
+        p {
+            margin: 0 0 6px 0;
+        }
+
+        /* Badges & Tags */
+        .badge {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 5px;
+            font-size: 7.5pt;
+            font-weight: 600;
+            margin-right: 3px;
+        }
+        .badge-green { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+        .badge-blue { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
+        .badge-purple { background: #f3e8ff; color: #7e22ce; border: 1px solid #e9d5ff; }
+        .badge-orange { background: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; }
+
+        /* Feature Grid */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 8px 0;
+        }
+
+        .feature-box {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 7px;
+            padding: 9px 12px;
+            font-size: 8.8pt;
+        }
+
+        .feature-box strong {
+            color: #0f172a;
+            font-size: 9.2pt;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 3px;
+        }
+
+        /* Callout Box */
+        .callout {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 9px 13px;
+            border-radius: 0 7px 7px 0;
+            margin: 8px 0;
+            font-size: 8.8pt;
+            color: #1e40af;
+        }
+
+        .callout-success {
+            background: #f0fdf4;
+            border-left-color: #22c55e;
+            color: #166534;
+        }
+
+        .callout-purple {
+            background: #faf5ff;
+            border-left-color: #a855f7;
+            color: #6b21a8;
+        }
+
+        /* Lists */
+        ul {
+            margin: 0 0 8px 0;
+            padding-left: 17px;
+        }
+        li {
+            margin-bottom: 3px;
+        }
+
+        /* Keyboard / UI Elements */
+        .ui-pill {
+            background: #f1f5f9;
+            border: 1px solid #cbd5e1;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 8pt;
+            color: #475569;
+        }
+
+        .footer-note {
+            text-align: center;
+            font-size: 8pt;
+            color: #94a3b8;
+            margin-top: 16px;
+            padding-top: 8px;
+            border-top: 1px solid #f1f5f9;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Box -->
+    <div class="header-box">
+        <div class="header-badge">⚡ Потребителски наръчник • v1.2</div>
+        <h1 class="header-title">🤖 Job Finder & Market Intelligence</h1>
+        <p class="header-subtitle">Автономен център за семантичен анализ, наблюдение на Agentic AI роли и кариерно планиране</p>
+        
+        <div class="meta-grid">
+            <div class="meta-item">
+                <strong>Потребителски профил</strong>
+                Петър Ганчев (Инженер)
+            </div>
+            <div class="meta-item">
+                <strong>AI Двигател</strong>
+                Gemini 3.8 Flash / Antigravity Agent
+            </div>
+            <div class="meta-item">
+                <strong>Платформа</strong>
+                Cloud + Desktop + Mobile Responsive
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 1: Списък с обяви & Мобилен филтър бар -->
+    <div class="section-card">
+        <h2>📋 1. Таб „Списък с обяви“ & Вграден филтър бар</h2>
+        <p>Централният екран за управление и преглед на всички открити работни позиции, специално съобразени с твоя профил.</p>
+        
+        <div class="feature-grid">
+            <div class="feature-box">
+                <strong>🎛️ Нов мобилен филтър бар</strong>
+                Разположен директно в таба (в разгъващ се контейнер <em>„Филтри и търсене в обявите“</em>). Оптимизиран за телефон и компютър без нужда от скрито меню.
+            </div>
+            <div class="feature-box">
+                <strong>🎯 AI Оценка на съвпадение (0-100%)</strong>
+                Автоматичен цветен бейдж за всяка позиция: <span class="badge badge-green">80%+ Висок Мач</span>, <span class="badge badge-orange">60-79% Умерен</span>, <span class="badge badge-blue">&lt;60% Базов</span>.
+            </div>
+            <div class="feature-box">
+                <strong>💰 Филтриране по заплата</strong>
+                Чекбокс <em>„Само с обявена заплата“</em> и избор на минимална сума (EUR / BGN).
+            </div>
+            <div class="feature-box">
+                <strong>🌐 Режим Remote & Локация</strong>
+                Бърз филтър за дистанционни международни и локални позиции.
+            </div>
+        </div>
+
+        <div class="callout callout-success">
+            <strong>💡 Полезни действия в списъка:</strong>
+            <ul>
+                <li><strong>🧹 Провери за изтекли:</strong> Сканира показаните позиции на живо и автоматично премахва свалените или неактивни обяви.</li>
+                <li><strong>📥 Зареди обявите от каталога:</strong> Свързва вече събраните позиции от общия пул към личния профил с един клик.</li>
+                <li><strong>📝 Персонализирано писмо:</strong> Всяка обява има бутон за преглед на съставено мотивационно писмо според твоя инженерен бекграунд.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Section 2: Модул за търсене -->
+    <div class="section-card">
+        <h2>🔍 2. Таб „Търсене“: Автономно скрейпване</h2>
+        <p>Модулът обхожда 6 източника в интернет, дедуплицира обявите и ги изпраща за <strong>пакетен (bulk) семантичен анализ</strong> към Gemini.</p>
+        
+        <ul>
+            <li><strong>Поддържани източници:</strong> <span class="badge badge-blue">dev.bg</span> <span class="badge badge-blue">jobs.bg</span> <span class="badge badge-blue">LinkedIn</span> <span class="badge badge-purple">Himalayas</span> <span class="badge badge-purple">EU Remote</span> <span class="badge badge-purple">HackerNews</span></li>
+            <li><strong>Управление на списъка:</strong> Опции за запазване на съществуващите, изчистване само на необработените (<span class="ui-pill">New</span>), или пълен ресет.</li>
+            <li><strong>Конзолен лог на живо:</strong> В реално време наблюдаваш кои сайтове се обхождат и колко нови позиции са намерени.</li>
+        </ul>
+    </div>
+
+    <!-- Section 3: Skill Roadmap -->
+    <div class="section-card">
+        <h2>🗺️ 3. Таб „Skill Roadmap“: Пътна карта за самоподготовка</h2>
+        <p>Индивидуална стратегия за развитие в <strong>Agentic Systems Developer</strong>, базирана на DeepLearning.AI и пазарните изисквания.</p>
+
+        <div class="callout callout-purple">
+            <strong>🎯 Твоето ключово инженерно предимство (Unfair Advantage):</strong>
+            Дипломата по <em>Роботика & Мехатроника (ТУ-Варна)</em> и опитът с комплексна логика и крайни автомати (FSM в Dynata) са точният фундамент за съвременните агентни графи (<strong>LangGraph, StateGraphs, Reflection Loops</strong>)!
+        </div>
+
+        <div class="feature-grid">
+            <div class="feature-box">
+                <strong>🟢 Ниво 1: Foundation (Основи)</strong>
+                Prompt Engineering, Context Strategy, AI Python, Pydantic валидация, LangChain основи.
+            </div>
+            <div class="feature-box">
+                <strong>🟡 Ниво 2: Core Track (Агентно Ядро)</strong>
+                4-те модела на Andrew Ng (Reflection, Tool Calling, Planning, Multi-Agent с CrewAI).
+            </div>
+            <div class="feature-box">
+                <strong>🔴 Ниво 3: Role Specialization</strong>
+                Model Context Protocol (MCP) Сървъри, LangGraph памет, Eval Harness, Advanced RAG.
+            </div>
+            <div class="feature-box">
+                <strong>💾 Перманентен прогрес</strong>
+                Напредъкът ти се записва сигурно в личния профил в базата данни и се пази трайно след рестартиране.
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 4: Портфолио & Пазарен анализ -->
+    <div class="section-card">
+        <h2>🚀 4. Портфолио Проекти & Пазарен анализ</h2>
+        <div class="feature-grid">
+            <div class="feature-box">
+                <strong>🛠️ GitHub Портфолио (5 топ проекта)</strong>
+                Готови концепции за практически проекти:
+                <ul>
+                    <li>1. Job-Finder Agent (Production)</li>
+                    <li>2. Personal MCP Server (Anthropic)</li>
+                    <li>3. Tool-Calling Eval Agent</li>
+                    <li>4. Multi-Agent Research Assistant</li>
+                    <li>5. Observability Dashboard</li>
+                </ul>
+            </div>
+            <div class="feature-box">
+                <strong>📊 Пазарен анализ на живо</strong>
+                Генерира обобщен доклад за изискванията в София и Remote:
+                <ul>
+                    <li>Най-търсени AI библиотеки и умения</li>
+                    <li>Нива на възнаграждения</li>
+                    <li>Дефицитни умения сред кандидатите</li>
+                    <li>Конкретни съвети за интервюта</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 5: Двустепенен профил & Настройки -->
+    <div class="section-card">
+        <h2>👤 5. Таб „Профил & CV“ и „Настройки“</h2>
+        <p>Платформата използва <strong>двустепенна профилна архитектура</strong> за прецизна оценка на съвпадението:</p>
+
+        <div class="feature-grid">
+            <div class="feature-box">
+                <strong>📄 Секция 1: Досегашен профил от CV</strong>
+                <ul>
+                    <li>Автоматично извличане на опит от качен PDF</li>
+                    <li>Настояща длъжност и стаж в години</li>
+                    <li>Доказани инженерни умения и езици</li>
+                </ul>
+            </div>
+            <div class="feature-box">
+                <strong>🎯 Секция 2: Търсена кариера & Цели</strong>
+                <ul>
+                    <li>Търсени длъжности (Agentic AI Engineer, Python Specialist)</li>
+                    <li>Целеви технологии (CrewAI, LangGraph, MCP)</li>
+                    <li>Кариерен Pitch за персонализирани мотивации</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="callout">
+            <strong>⚙️ Настройки на AI Модела:</strong>
+            В таб „Настройки“ можеш да въведеш своя личен Gemini API ключ от Google AI Studio. Поддържат се светкавични модели (<span class=\"ui-pill\">gemini-3.8-flash</span>) или модели за дълбоки агентски разсъждения (<span class=\"ui-pill\">antigravity-preview-latest</span>). Системата коректно разпознава активния ключ от твоя личен профил.
+        </div>
+    </div>
+
+    <div class="footer-note">
+        Job Finder AI • Разработено за автономно кариерно позициониране • София, България
+    </div>
+
+</body>
+</html>
+"""
+
+def generate_pdf():
+    html_path = Path("Job_Finder_Dashboard_Tutorial.html")
+    pdf_path = Path("Job_Finder_Dashboard_Tutorial.pdf")
+    
+    html_path.write_text(html_content, encoding="utf-8")
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(f"file:///{html_path.resolve().as_posix()}")
+        page.pdf(
+            path=str(pdf_path),
+            format="A4",
+            print_background=True,
+            margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"}
+        )
+        browser.close()
+        
+    print(f"SUCCESS: PDF generated at {pdf_path.resolve()} (Size: {pdf_path.stat().st_size} bytes)")
+
+if __name__ == "__main__":
+    generate_pdf()
