@@ -756,17 +756,22 @@ with tab5:
             st.error("За да използваш AI парсването, трябва да имаш въведен Gemini API Key в настройките.")
         else:
             with st.spinner("🧠 AI чете и анализира твоето CV..."):
-                import PyPDF2
+                try:
+                    import pypdf
+                    pdf_reader = pypdf.PdfReader(uploaded_file)
+                except ImportError:
+                    import PyPDF2
+                    pdf_reader = PyPDF2.PdfReader(uploaded_file)
+                
                 from src.intelligence.cv_parser import CVAIExtractor
                 
                 # Extract text
-                pdf_reader = PyPDF2.PdfReader(uploaded_file)
                 cv_text = ""
                 for page in pdf_reader.pages:
-                    cv_text += page.extract_text() + "\n"
+                    cv_text += (page.extract_text() or "") + "\n"
                 
                 # Parse
-                extractor = CVAIExtractor(api_key=user_gemini_key)
+                extractor = CVAIExtractor(api_key=user_gemini_key, model_name=user_gemini_model)
                 structured_cv = extractor.parse_cv(cv_text)
                 
                 if structured_cv:
