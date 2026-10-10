@@ -37,3 +37,6 @@ Desktop.ini
 # Local backup & downloads
 _backup_local_version/
 downloaded_files/
+
+# Antigravity local agent workspace & skills
+.agents/
