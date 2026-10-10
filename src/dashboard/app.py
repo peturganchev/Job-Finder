@@ -132,8 +132,11 @@ if is_auth_enabled():
         st.stop()
     user_profile = load_user_profile(current_user["id"])
 
-# Инициализиране на хранилището (за текущия потребител)
-repo = get_repository(user_id=current_user["id"] if current_user else None)
+# Инициализиране на хранилището (за текущия потребител с JWT токен за PostgREST)
+repo = get_repository(
+    user_id=current_user["id"] if current_user else None,
+    access_token=current_user.get("access_token") if current_user else None
+)
 
 # Личен API ключ и настройки на потребителя за Gemini
 user_gemini_key = user_profile.get("gemini_api_key") if current_user else None
@@ -517,6 +520,8 @@ with tab_search:
                     cmd = [sys.executable, "run.py", "--search"]
                     if current_user:
                         cmd.append(f"--user-id={current_user['id']}")
+                        if current_user.get("access_token"):
+                            cmd.append(f"--access-token={current_user['access_token']}")
                     if clean_choice == "Изчисти само необработените ('New')":
                         cmd.append("--clear-new")
                     elif clean_choice == "Изчисти абсолютно всички обяви (Пълен ресет)":
@@ -603,7 +608,10 @@ with tab2:
 
     settings_mgr = SettingsManager()
     settings = settings_mgr.load()
-    progress = settings.roadmap_progress
+    
+    # Зареждане на прогреса: приоритетно от Supabase за текущия потребител, с резервен вариант от settings
+    db_progress = user_profile.get("roadmap_progress") if current_user else None
+    progress = db_progress if (isinstance(db_progress, dict) and len(db_progress) > 0) else (settings.roadmap_progress or {})
 
     st.markdown("### 📊 Твоят напредък по 3-те нива на специализация")
 
@@ -639,13 +647,18 @@ with tab2:
     st.markdown(f"**Текущ статус:** Усвоени **{completed_skills}** от **{total_skills}** ключови модула (**{int(progress_ratio * 100)}%**) 🚀")
     
     if st.button("💾 Запази прогреса", key="save_roadmap"):
-        settings.roadmap_progress = {
+        new_progress = {
             "sk_p1": s1, "sk_p2": s2, "sk_p3": s3, "sk_p4": s4,
             "sk_p5": s5, "sk_p6": s6, "sk_p7": s7, "sk_p8": s8,
             "sk_p9": s9, "sk_p10": s10, "sk_p11": s11, "sk_p12": s12
         }
+        settings.roadmap_progress = new_progress
         settings_mgr.save(settings)
-        st.success("Прогресът е запазен успешно!")
+        if current_user:
+            save_user_profile(current_user["id"], {"roadmap_progress": new_progress})
+            user_profile["roadmap_progress"] = new_progress
+        st.success("Прогресът е запазен успешно в Supabase!")
+        import time; time.sleep(0.5)
         st.rerun()
 
     st.divider()

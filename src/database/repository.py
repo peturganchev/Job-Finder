@@ -383,7 +383,7 @@ class JobRepository:
         )
 
 
-def get_repository(user_id: Optional[str] = None):
+def get_repository(user_id: Optional[str] = None, access_token: Optional[str] = None):
     """
     Фабрична функция за зареждане на правилното хранилище:
     Ако SUPABASE_URL и SUPABASE_KEY са налични в средата, ползва SupabaseRepository.
@@ -394,7 +394,12 @@ def get_repository(user_id: Optional[str] = None):
     if supabase_url and supabase_key:
         try:
             from src.database.supabase_repo import SupabaseRepository
-            return SupabaseRepository(supabase_url=supabase_url, supabase_key=supabase_key, user_id=user_id)
+            return SupabaseRepository(
+                supabase_url=supabase_url,
+                supabase_key=supabase_key,
+                user_id=user_id,
+                access_token=access_token
+            )
         except Exception as e:
             print(f"⚠️ Грешка при връзка със Supabase: {e}. Превключване към SQLite.")
     return JobRepository()

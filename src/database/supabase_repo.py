@@ -15,20 +15,36 @@ class SupabaseRepository:
         self,
         supabase_url: Optional[str] = None,
         supabase_key: Optional[str] = None,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        access_token: Optional[str] = None
     ):
         self.url = supabase_url or os.getenv("SUPABASE_URL")
         self.key = supabase_key or os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
         self.user_id = user_id
+        self.access_token = access_token
         
         if not self.url or not self.key:
             raise ValueError("SUPABASE_URL and SUPABASE_KEY must be provided or set in environment.")
             
         self.client: Client = create_client(self.url, self.key)
+        if self.access_token:
+            try:
+                self.client.postgrest.auth(self.access_token)
+            except Exception as e:
+                print(f"⚠️ Грешка при ауторизация с JWT access token: {e}")
 
     def set_user_id(self, user_id: str):
         """Задава текущия потребител за изолиране на данните."""
         self.user_id = user_id
+
+    def set_access_token(self, access_token: str):
+        """Задава JWT токен за автентикирани заявки през PostgREST."""
+        self.access_token = access_token
+        if self.client and access_token:
+            try:
+                self.client.postgrest.auth(access_token)
+            except Exception as e:
+                print(f"⚠️ Грешка при обновяване на JWT access token: {e}")
 
     def exists(self, url: str) -> bool:
         """Проверява дали обява с такъв URL съществува в глобалния каталог jobs."""
@@ -95,7 +111,15 @@ class SupabaseRepository:
                 "cover_letter": job.cover_letter,
                 "updated_at": datetime.now().isoformat()
             }
-            self.client.table("user_jobs").upsert(user_job_payload, on_conflict="user_id,job_id").execute()
+            try:
+                self.client.table("user_jobs").upsert(user_job_payload, on_conflict="user_id,job_id").execute()
+            except Exception as e:
+                err_msg = str(e)
+                if "42501" in err_msg or "row-level security" in err_msg.lower():
+                    print(f"⚠️ [RLS Политика] Базата данни блокира запис в 'user_jobs' за потребител {self.user_id}: {e}")
+                    print("💡 Решение: Изпълни в Supabase SQL Editor: ALTER TABLE public.user_jobs DISABLE ROW LEVEL SECURITY; или добави SUPABASE_SERVICE_ROLE_KEY в secrets.")
+                else:
+                    print(f"⚠️ Грешка при запис в user_jobs: {e}")
 
         return job_db_id
 
@@ -120,8 +144,12 @@ class SupabaseRepository:
                 "cover_letter": cover_letter,
                 "updated_at": datetime.now().isoformat()
             }
-            res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
-            return len(res.data) > 0
+            try:
+                res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
+                return len(res.data) > 0
+            except Exception as e:
+                print(f"⚠️ Грешка при обновяване на AI анализ в user_jobs: {e}")
+                return False
         return False
 
     def update_status(self, job_id: Union[int, str], status: ApplicationStatus) -> bool:
@@ -136,8 +164,12 @@ class SupabaseRepository:
             "status": status_str,
             "updated_at": datetime.now().isoformat()
         }
-        res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
-        return len(res.data) > 0
+        try:
+            res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
+            return len(res.data) > 0
+        except Exception as e:
+            print(f"⚠️ Грешка при обновяване на статус в user_jobs: {e}")
+            return False
 
     def mark_as_notified(self, job_id: Union[int, str]) -> bool:
         """Маркира обявата като успешно изпратена в Discord/Telegram за текущия потребител."""
@@ -149,8 +181,12 @@ class SupabaseRepository:
             "notified": True,
             "notified_at": datetime.now().isoformat()
         }
-        res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
-        return len(res.data) > 0
+        try:
+            res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
+            return len(res.data) > 0
+        except Exception as e:
+            print(f"⚠️ Грешка при маркиране на известие в user_jobs: {e}")
+            return False
 
     def get_jobs_without_ai_analysis(self) -> List[Job]:
         """Връща обяви, които нямат Gemini AI анализ или имат само базов евристичен анализ."""

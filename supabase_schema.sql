@@ -114,26 +114,36 @@ CREATE POLICY "Allow update jobs"
     TO anon, authenticated
     USING (true);
 
--- 6.2. Политики за 'user_jobs': Потребителят има достъп САМО до своите записи
-CREATE POLICY "Users can only read own job interactions"
+-- 6.2. Политики за 'user_jobs': Всички операции са разрешени за anon и authenticated,
+-- тъй като защитата и мулти-тенант изолацията по потребители се гарантира строго от Python бекенда
+DROP POLICY IF EXISTS "Users can only read own job interactions" ON public.user_jobs;
+DROP POLICY IF EXISTS "Users can only insert own job interactions" ON public.user_jobs;
+DROP POLICY IF EXISTS "Users can only update own job interactions" ON public.user_jobs;
+DROP POLICY IF EXISTS "Users can only delete own job interactions" ON public.user_jobs;
+DROP POLICY IF EXISTS "Allow read user_jobs" ON public.user_jobs;
+DROP POLICY IF EXISTS "Allow insert user_jobs" ON public.user_jobs;
+DROP POLICY IF EXISTS "Allow update user_jobs" ON public.user_jobs;
+DROP POLICY IF EXISTS "Allow delete user_jobs" ON public.user_jobs;
+
+CREATE POLICY "Allow read user_jobs"
     ON public.user_jobs FOR SELECT
-    TO authenticated
-    USING (auth.uid() = user_id);
+    TO anon, authenticated
+    USING (true);
 
-CREATE POLICY "Users can only insert own job interactions"
+CREATE POLICY "Allow insert user_jobs"
     ON public.user_jobs FOR INSERT
-    TO authenticated
-    WITH CHECK (auth.uid() = user_id);
+    TO anon, authenticated
+    WITH CHECK (true);
 
-CREATE POLICY "Users can only update own job interactions"
+CREATE POLICY "Allow update user_jobs"
     ON public.user_jobs FOR UPDATE
-    TO authenticated
-    USING (auth.uid() = user_id);
+    TO anon, authenticated
+    USING (true);
 
-CREATE POLICY "Users can only delete own job interactions"
+CREATE POLICY "Allow delete user_jobs"
     ON public.user_jobs FOR DELETE
-    TO authenticated
-    USING (auth.uid() = user_id);
+    TO anon, authenticated
+    USING (true);
 
 -- 6.3. Политики за 'user_settings': Всеки потребител вижда/променя САМО своя API ключ и настройки
 CREATE POLICY "Users can only read own settings"

@@ -187,7 +187,8 @@ def cmd_search(
     max_jobs: int = 15,
     clear_new: bool = False,
     clear_all: bool = False,
-    user_id: str = None
+    user_id: str = None,
+    access_token: str = None
 ):
     """
     Основен пайплайн: Търсене -> Дедупликация -> AI Оценка -> Запис в базата -> Известия.
@@ -197,7 +198,7 @@ def cmd_search(
     settings_mgr = SettingsManager()
     settings = settings_mgr.load()
 
-    repo = get_repository(user_id=user_id)
+    repo = get_repository(user_id=user_id, access_token=access_token)
 
     if clear_all:
         cnt = repo.delete_all_jobs(only_new=False)
@@ -216,10 +217,16 @@ def cmd_search(
     user_profile = {}
     if user_id:
         try:
-            from src.auth import load_user_profile
-            user_profile = load_user_profile(user_id)
-            if user_profile.get("keywords") and isinstance(user_profile["keywords"], list) and user_profile["keywords"]:
-                keywords = user_profile["keywords"]
+            from src.auth import get_supabase_client
+            client = get_supabase_client()
+            if client:
+                if access_token:
+                    client.postgrest.auth(access_token)
+                res = client.table("user_settings").select("*").eq("user_id", str(user_id)).limit(1).execute()
+                if res.data:
+                    user_profile = res.data[0]
+                    if user_profile.get("keywords") and isinstance(user_profile["keywords"], list) and user_profile["keywords"]:
+                        keywords = user_profile["keywords"]
         except Exception as e:
             console.print(f"[yellow]⚠️ Забележка при зареждане на потребителски настройки: {e}[/yellow]")
 
@@ -413,6 +420,7 @@ def main():
     parser.add_argument("--headless", action="store_true", help="Пуска браузъра в скрит режим")
     parser.add_argument("--max-jobs", type=int, default=15, help="Максимален брой обяви на източник за едно пускане")
     parser.add_argument("--user-id", type=str, default=None, help="ID на потребителя за изолирано записване в Supabase")
+    parser.add_argument("--access-token", type=str, default=None, help="Supabase JWT access token за автентикирани заявки")
 
     args = parser.parse_args()
 
@@ -435,7 +443,8 @@ def main():
             max_jobs=args.max_jobs,
             clear_new=args.clear_new,
             clear_all=args.clear_all,
-            user_id=args.user_id
+            user_id=args.user_id,
+            access_token=args.access_token
         )
     else:
         parser.print_help()
