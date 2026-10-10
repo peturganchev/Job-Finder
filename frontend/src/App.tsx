@@ -12,6 +12,7 @@ import { SearchView } from './components/SearchView';
 import { ProfileView } from './components/ProfileView';
 import { InsightsView } from './components/InsightsView';
 import { SettingsView } from './components/SettingsView';
+import { RoadmapPortfolioView } from './components/RoadmapPortfolioView';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { apiFetchJobs, apiUpdateJobStatus, apiDeleteJob, apiFetchMarketStats } from './lib/api';
 import type { Job, ApplicationStatus, MarketStats } from './types';
@@ -184,7 +185,12 @@ function AppContent() {
           </ProtectedRoute>
         )}
 
-        {/* Tab 3: Profile & CV Intelligence */}
+        {/* Tab 3: Skill Roadmap & Portfolio */}
+        {currentTab === 'roadmap' && (
+          <RoadmapPortfolioView />
+        )}
+
+        {/* Tab 4: Profile & CV Intelligence */}
         {currentTab === 'profile' && (
           <ProtectedRoute
             onOpenAuth={() => setIsAuthOpen(true)}

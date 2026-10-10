@@ -53,9 +53,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
   };
 
-  // Determine if user has administrative capabilities
+  // Determine if user has administrative capabilities (strictly peturganchev93@gmail.com)
+  const ADMIN_EMAILS = ['peturganchev93@gmail.com'];
   const isWaitlistAdmin = Boolean(
-    user && (user.email?.includes('archevyn') || user.email?.includes('admin') || user.email?.includes('petur'))
+    user && user.email && ADMIN_EMAILS.includes(user.email.toLowerCase().trim())
   );
 
   return (

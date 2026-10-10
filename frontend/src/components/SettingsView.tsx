@@ -535,26 +535,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Основна локация
+              Основна локация (България &amp; LinkedIn)
             </label>
-            <input
-              type="text"
+            <select
               value={location}
               onChange={(e) => setLocation(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500 transition"
-            />
+            >
+              <option value="Bulgaria">България (Всички локации)</option>
+              <option value="Sofia">София (Sofia)</option>
+              <option value="Plovdiv">Пловдив (Plovdiv)</option>
+              <option value="Varna">Варна (Varna)</option>
+              <option value="Remote">Само Дистанционно (Remote)</option>
+            </select>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Дистанционна локация (Remote)
+              Дистанционна локация (Remote портали)
             </label>
-            <input
-              type="text"
+            <select
               value={remoteLocation}
               onChange={(e) => setRemoteLocation(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-emerald-500 transition"
-            />
+            >
+              <option value="Worldwide">Worldwide (Глобално дистанционно)</option>
+              <option value="European Union">European Union (Европейски съюз)</option>
+              <option value="Europe">Europe (Европа общо)</option>
+              <option value="UK">UK (Великобритания)</option>
+              <option value="USA">USA (САЩ)</option>
+            </select>
           </div>
         </div>
       </div>

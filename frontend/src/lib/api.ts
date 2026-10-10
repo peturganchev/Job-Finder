@@ -228,6 +228,17 @@ export async function apiFetchMarketStats(): Promise<MarketStats> {
   return res.json();
 }
 
+/** Fetch or generate AI market insights report */
+export async function apiFetchMarketReport(limit: number = 40): Promise<{ report: string; generated_at: string }> {
+  const url = `${API_BASE_URL}/api/market/report?limit=${limit}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch market report`);
+  }
+  return res.json();
+}
+
+
 export interface SettingsData {
   gemini_api_key_masked?: string | null;
   gemini_model: string;

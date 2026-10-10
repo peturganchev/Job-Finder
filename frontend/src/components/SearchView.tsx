@@ -15,8 +15,11 @@ import {
   Copy,
   Check,
   Layers,
+  Bookmark,
+  CheckCircle2,
+  Info,
 } from 'lucide-react';
-import { apiStartSearch } from '../lib/api';
+import { apiStartSearch, apiGetSettings, apiUpdateSettings } from '../lib/api';
 import { TerminalLogs } from './TerminalLogs';
 import { useAuth } from '../context/AuthContext';
 
@@ -94,6 +97,8 @@ export const KEYWORD_PRESETS = [
 ];
 
 const STORAGE_KEY = 'jobfinder_v2_keywords';
+const ACTIVE_TASK_KEY = 'jobfinder_active_search_task_id';
+
 const DEFAULT_KEYWORDS = [
   'AI Engineer',
   'Agentic',
@@ -134,14 +139,25 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
   const [bulkText, setBulkText] = useState(() => keywords.join('\n'));
   const [copied, setCopied] = useState(false);
 
+  const [isSavingKeywords, setIsSavingKeywords] = useState<boolean>(false);
+  const [saveKeywordsSuccess, setSaveKeywordsSuccess] = useState<boolean>(false);
+
   const [maxJobs, setMaxJobs] = useState<number>(10);
   const [clearNew, setClearNew] = useState<boolean>(false);
 
-  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  // Background task persistence across tabs & reloads
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(ACTIVE_TASK_KEY);
+    } catch {
+      return null;
+    }
+  });
+
   const [isStarting, setIsStarting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sync to localStorage
+  // Sync keywords to localStorage
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(keywords));
@@ -149,6 +165,39 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
       // ignore
     }
   }, [keywords]);
+
+  // Load saved keywords from Supabase profile on mount if authenticated
+  useEffect(() => {
+    if (session?.access_token) {
+      apiGetSettings(session.access_token)
+        .then((settings) => {
+          if (
+            settings.search_keywords &&
+            Array.isArray(settings.search_keywords) &&
+            settings.search_keywords.length > 0
+          ) {
+            setKeywords(settings.search_keywords);
+            setBulkText(settings.search_keywords.join('\n'));
+          }
+        })
+        .catch((err) => {
+          console.warn('Could not load user settings keywords:', err);
+        });
+    }
+  }, [session]);
+
+  // Sync activeTaskId to localStorage so switching tabs doesn't interrupt or lose the logs
+  useEffect(() => {
+    try {
+      if (activeTaskId) {
+        localStorage.setItem(ACTIVE_TASK_KEY, activeTaskId);
+      } else {
+        localStorage.removeItem(ACTIVE_TASK_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeTaskId]);
 
   // Keep bulkText in sync when switching to textarea mode
   const handleSwitchMode = (mode: 'tags' | 'textarea') => {
@@ -240,6 +289,28 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
     setKeywords(Array.from(new Set(parsed)));
   };
 
+  // Explicit save of keywords to Supabase profile
+  const handleSaveKeywordsToProfile = async () => {
+    if (!session?.access_token) {
+      setErrorMsg('Моля, влезте в профила си, за да запазите ключовите думи в Supabase.');
+      return;
+    }
+    setIsSavingKeywords(true);
+    setErrorMsg(null);
+    try {
+      await apiUpdateSettings(
+        { search_keywords: keywords },
+        session.access_token
+      );
+      setSaveKeywordsSuccess(true);
+      setTimeout(() => setSaveKeywordsSuccess(false), 3000);
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Грешка при запис в профила.');
+    } finally {
+      setIsSavingKeywords(false);
+    }
+  };
+
   const handleStartSearch = async () => {
     // If empty, fall back to default
     const activeKeywords = keywords.length > 0 ? keywords : DEFAULT_KEYWORDS;
@@ -256,6 +327,11 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
         session?.access_token
       );
       setActiveTaskId(res.task_id);
+      try {
+        localStorage.setItem(ACTIVE_TASK_KEY, res.task_id);
+      } catch {
+        // ignore
+      }
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Грешка при стартиране на търсенето.');
     } finally {
@@ -294,11 +370,26 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
               <span>Резултат от Търсенето в Реално Време</span>
             </h3>
             <button
-              onClick={() => setActiveTaskId(null)}
-              className="text-xs text-slate-400 hover:text-white transition"
+              onClick={() => {
+                setActiveTaskId(null);
+                try {
+                  localStorage.removeItem(ACTIVE_TASK_KEY);
+                } catch {
+                  // ignore
+                }
+              }}
+              className="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 transition"
+              title="Скриване на конзолата (задачата продължава да се изпълнява на сървъра)"
             >
               Скрий конзолата
             </button>
+          </div>
+
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2.5">
+            <Info className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="leading-relaxed">
+              <strong>Фонов Режим:</strong> Скрапването и AI оценката се изпълняват автономно на FastAPI сървъра. Дори да превключите към друг таб, да прегледате обявите или да затворите страницата, задачата няма да спре.
+            </span>
           </div>
 
           <TerminalLogs taskId={activeTaskId} onViewJobs={onViewJobs} />
@@ -367,7 +458,29 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
             </div>
 
             {/* Mode Switcher & Quick Actions */}
-            <div className="flex items-center gap-1.5 self-start sm:self-auto">
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              {/* Save Keywords to Supabase Profile */}
+              <button
+                type="button"
+                onClick={handleSaveKeywordsToProfile}
+                disabled={isSavingKeywords || keywords.length === 0}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                  saveKeywordsSuccess
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30'
+                } disabled:opacity-40`}
+                title="Запази този списък с ключови думи във вашия Supabase профил"
+              >
+                {isSavingKeywords ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : saveKeywordsSuccess ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Bookmark className="w-3.5 h-3.5" />
+                )}
+                <span>{saveKeywordsSuccess ? 'Запазено в Профила!' : '💾 Запази в Профила'}</span>
+              </button>
+
               <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
                 <button
                   type="button"

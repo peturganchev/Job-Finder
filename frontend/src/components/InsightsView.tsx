@@ -1,19 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   TrendingUp,
-  Award,
   Code,
   CheckCircle,
   Globe,
   Sparkles,
-  Save,
-  Loader2,
   RefreshCw,
   Compass,
+  FileText,
+  Loader2,
+  Info,
 } from 'lucide-react';
 import type { MarketStats, Job } from '../types';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
+import { apiFetchMarketReport } from '../lib/api';
 
 interface InsightsViewProps {
   stats: MarketStats | null;
@@ -22,161 +21,29 @@ interface InsightsViewProps {
   onRefreshStats: () => void;
 }
 
-interface RoadmapModule {
-  id: string;
-  title: string;
-  badge: string;
-  description: string;
-  items: { id: string; label: string; desc: string }[];
-}
-
-const ROADMAP_MODULES: RoadmapModule[] = [
-  {
-    id: 'rag',
-    title: '1. RAG & Vector Search Architecture',
-    badge: 'Advanced Retrieval',
-    description: 'Изграждане на Retrieval-Augmented Generation върху неструктурирани корпоративни бази.',
-    items: [
-      { id: 'rag_chunking', label: 'Semantic Chunking & Embedding Models', desc: 'Оптимизирано разделяне на текст и векторни ембединги' },
-      { id: 'rag_vector_db', label: 'Vector Databases (PGVector, Qdrant)', desc: 'Индексиране, similarity search и метаданни' },
-      { id: 'rag_hybrid', label: 'Hybrid Search (Dense + Sparse BM25)', desc: 'Комбиниране на ключово и семантично търсене' },
-      { id: 'rag_reranking', label: 'Cross-Encoder Re-ranking & Query Rewriting', desc: 'Филтриране и пренареждане на намерените пасажи' },
-    ],
-  },
-  {
-    id: 'agents',
-    title: '2. Multi-Agent Systems & StateGraphs',
-    badge: 'Agentic AI Core',
-    description: 'Оркестрация на автономни агентни системи със споделен контекст и роли.',
-    items: [
-      { id: 'agent_langgraph', label: 'LangGraph (State Graphs & Cycles)', desc: 'Циклични агентни графи със състояния и преходи' },
-      { id: 'agent_crewai', label: 'CrewAI (Role-playing Multi-agent)', desc: 'Разпределение на специализирани роли и цели' },
-      { id: 'agent_hitl', label: 'Human-in-the-Loop & Approval Gates', desc: 'Точки за човешка верификация преди необратими действия' },
-      { id: 'agent_autogen', label: 'Conversational Orchestration (AutoGen)', desc: 'Мулти-агентен диалог и съгласуване' },
-    ],
-  },
-  {
-    id: 'fsm',
-    title: '3. Finite State Machines & Feedback Loops',
-    badge: 'Unfair Advantage',
-    description: 'Инженерният фундамент от Роботика & Мехатроника: крайни автомати и обратни връзки.',
-    items: [
-      { id: 'fsm_state_machine', label: 'Deterministic FSM State Transitions', desc: 'Детерминистични състояния без случайни халюцинации' },
-      { id: 'fsm_reflection', label: 'Reflection Loops & Self-Correction', desc: 'Автономно откриване на грешки и повторен опит' },
-      { id: 'fsm_error_recovery', label: 'Fault-Tolerant Circuit Breakers', desc: 'Защита при срив на външни API или тайм-аут' },
-    ],
-  },
-  {
-    id: 'tools',
-    title: '4. Tool Calling & Production Evals',
-    badge: 'Production Grade',
-    description: 'Интеграция на LLM с реалния свят през надеждни REST API и автоматизирани метрики.',
-    items: [
-      { id: 'tool_calling', label: 'Structured Tool Calling & JSON Schemas', desc: 'Pydantic структурирано извличане и извикване на функции' },
-      { id: 'tool_ragas', label: 'Ragas / TruLens Evaluation Frameworks', desc: 'Метрики за точност, релевантност и вяра (faithfulness)' },
-      { id: 'tool_sandboxing', label: 'Sandboxing & Least Privilege Security', desc: 'Безопасно изпълнение на код и сесии' },
-    ],
-  },
-  {
-    id: 'infra',
-    title: '5. Full-Stack & Cloud Deployment',
-    badge: 'End-to-End Delivery',
-    description: 'Превръщане на AI алгоритмите в скалируеми, завършени софтуерни продукти.',
-    items: [
-      { id: 'infra_fastapi', label: 'FastAPI High-Performance Async Backend', desc: 'REST ендпойнти, бекграунд таскове и CORS' },
-      { id: 'infra_supabase', label: 'Supabase PostgreSQL & Row Level Security', desc: 'Мултитенант сигурност на ниво база данни' },
-      { id: 'infra_react', label: 'Modern React SPA & Mobile-first UI', desc: 'Светкавичен Vite фронтенд с вечни сесии' },
-    ],
-  },
-];
-
-const ROADMAP_STORAGE_KEY = 'jobfinder_v2_roadmap_progress';
-
 export const InsightsView: React.FC<InsightsViewProps> = ({
   stats,
   jobs,
   loadingStats,
   onRefreshStats,
 }) => {
-  const { user } = useAuth();
+  // Market report state
+  const [report, setReport] = useState<string | null>(null);
+  const [loadingReport, setLoadingReport] = useState<boolean>(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
-  // Completed roadmap item IDs
-  const [completedItems, setCompletedItems] = useState<string[]>(() => {
+  const handleGenerateReport = async () => {
+    setLoadingReport(true);
+    setReportError(null);
     try {
-      const saved = localStorage.getItem(ROADMAP_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
-    } catch {
-      // ignore
-    }
-    // Default initial checked items reflecting Peter's proven background
-    return ['fsm_state_machine', 'fsm_error_recovery', 'infra_fastapi', 'infra_supabase', 'infra_react', 'tool_calling'];
-  });
-
-  const [savingRoadmap, setSavingRoadmap] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
-
-  // Load roadmap from Supabase user_settings if user logged in
-  useEffect(() => {
-    if (!user) return;
-    supabase
-      .from('user_settings')
-      .select('roadmap_progress')
-      .eq('user_id', user.id)
-      .limit(1)
-      .then(({ data, error }) => {
-        if (!error && data && data[0]?.roadmap_progress?.completed) {
-          const loaded = data[0].roadmap_progress.completed;
-          if (Array.isArray(loaded)) {
-            setCompletedItems(loaded);
-            localStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify(loaded));
-          }
-        }
-      });
-  }, [user]);
-
-  // Toggle roadmap item
-  const toggleItem = (itemId: string) => {
-    setCompletedItems((prev) => {
-      const updated = prev.includes(itemId)
-        ? prev.filter((id) => id !== itemId)
-        : [...prev, itemId];
-      localStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  // Save roadmap to Supabase
-  const handleSaveRoadmap = async () => {
-    if (!user) {
-      setSaveMessage('Прогресът е запазен локално в браузъра!');
-      setTimeout(() => setSaveMessage(null), 3000);
-      return;
-    }
-    setSavingRoadmap(true);
-    setSaveMessage(null);
-    try {
-      const { error } = await supabase.from('user_settings').upsert({
-        user_id: user.id,
-        roadmap_progress: {
-          completed: completedItems,
-          updated_at: new Date().toISOString(),
-        },
-      });
-      if (error) throw error;
-      setSaveMessage('Прогресът беше успешно синхронизиран с вашия акаунт в Supabase!');
+      const res = await apiFetchMarketReport(40);
+      setReport(res.report);
     } catch (e: unknown) {
-      setSaveMessage(e instanceof Error ? e.message : 'Грешка при запис.');
+      setReportError(e instanceof Error ? e.message : 'Грешка при генериране на отчета.');
     } finally {
-      setSavingRoadmap(false);
-      setTimeout(() => setSaveMessage(null), 3500);
+      setLoadingReport(false);
     }
   };
-
-  // Calculate totals
-  const allItemIds = ROADMAP_MODULES.flatMap((m) => m.items.map((i) => i.id));
-  const totalItemsCount = allItemIds.length;
-  const completedCount = completedItems.filter((id) => allItemIds.includes(id)).length;
-  const progressPercent = Math.round((completedCount / totalItemsCount) * 100);
 
   // Distribution by source from current jobs
   const sourceCounts: Record<string, number> = {};
@@ -206,7 +73,7 @@ export const InsightsView: React.FC<InsightsViewProps> = ({
             </h1>
           </div>
           <p className="text-xs text-slate-400">
-            Реални изисквания, топ 15 най-търсени технологии и интерактивен Skill Roadmap
+            Реални пазарни изисквания и статистика, извлечени от активните обяви за AI/ML роли
           </p>
         </div>
 
@@ -218,6 +85,17 @@ export const InsightsView: React.FC<InsightsViewProps> = ({
           <RefreshCw className={`w-3.5 h-3.5 ${loadingStats ? 'animate-spin' : ''}`} />
           <span>{loadingStats ? 'Анализиране...' : 'Обнови статистиката'}</span>
         </button>
+      </div>
+
+      {/* Data Source Explanation Callout */}
+      <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3 text-xs text-slate-300">
+        <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+        <div>
+          <span className="font-bold text-white">Произход и източник на данните: </span>
+          Всички показани графики и метрики се изчисляват динамично от реалните обяви (общо{' '}
+          <span className="text-emerald-400 font-bold">{stats?.total_jobs || jobs.length} позиции</span>),
+          обходени от порталите <span className="font-mono text-slate-200">dev.bg, jobs.bg, LinkedIn, Himalayas, EU Remote Jobs и Hacker News</span> и съхранени в базата данни на Supabase.
+        </div>
       </div>
 
       {/* Top Metrics Grid */}
@@ -364,132 +242,49 @@ export const InsightsView: React.FC<InsightsViewProps> = ({
         </div>
       </div>
 
-      {/* Unfair Advantage Callout */}
-      <div className="p-6 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900/60 to-slate-900/40 border border-emerald-500/30 space-y-2">
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-emerald-400" />
-          <h4 className="text-sm font-bold text-emerald-300">
-            💡 Ключово Инженерно Предимство (Unfair Advantage)
-          </h4>
-        </div>
-        <p className="text-xs text-slate-300 leading-relaxed">
-          За разлика от кандидатите, идващи от стандартен уеб девелъпмънт, инженерното образование по <b>Роботика и Мехатроника</b> и 8+ години корпоративен опит в програмиране на комплексна логика дават солиден фундамент в <b>теория на автоматичното управление, крайните автомати (Finite State Machines) и обратните връзки (Feedback Loops)</b>. Това е <u>точният фундамент</u>, върху който стъпват съвременните агентни графи (<b>LangGraph, StateGraphs, Reflection Loops</b>)!
-        </p>
-      </div>
-
-      {/* Interactive Skill Roadmap Tracker */}
+      {/* AI Market Report Generator */}
       <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-          <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Award className="w-5 h-5 text-teal-400" />
-              <span>Интерактивен Skill Roadmap за Agentic AI роли</span>
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Отбелязвайте усвоените модули, за да следите готовността си за пазара в реално време
-            </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <FileText className="w-5 h-5 text-teal-400" />
+            <div>
+              <h3 className="text-base font-bold text-white">AI Синтезиран Пазарен Доклад</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Генерира структуриран анализ на изискванията, заплатите и технологиите с Google Gemini
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSaveRoadmap}
-              disabled={savingRoadmap}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition"
-            >
-              {savingRoadmap ? (
+          <button
+            onClick={handleGenerateReport}
+            disabled={loadingReport}
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition self-start sm:self-auto shrink-0"
+          >
+            {loadingReport ? (
+              <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Save className="w-3.5 h-3.5" />
-              )}
-              <span>Запази прогреса</span>
-            </button>
-          </div>
+                <span>Генериране...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Генерирай Пазарен Доклад</span>
+              </>
+            )}
+          </button>
         </div>
 
-        {/* Progress Bar Header */}
-        <div className="space-y-2 p-4 rounded-xl bg-slate-950 border border-slate-800">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-200">
-              Текущ напредък: <span className="text-emerald-400 font-bold">{completedCount}</span> от <span className="text-slate-400">{totalItemsCount}</span> ключови модула
-            </span>
-            <span className="font-mono text-emerald-400 font-bold text-sm">
-              {progressPercent}%
-            </span>
+        {reportError && (
+          <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
+            {reportError}
           </div>
-          <div className="w-full bg-slate-900 h-3 rounded-full overflow-hidden border border-slate-800">
-            <div
-              className="h-full bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 rounded-full transition-all duration-500"
-              style={{ width: `${progressPercent}%` }}
-            />
+        )}
+
+        {report && (
+          <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 text-xs leading-relaxed text-slate-200 space-y-3 font-mono whitespace-pre-wrap max-h-96 overflow-y-auto">
+            {report}
           </div>
-          {saveMessage && (
-            <p className="text-[11px] text-emerald-400 font-medium animate-in fade-in">
-              ✓ {saveMessage}
-            </p>
-          )}
-        </div>
-
-        {/* Modules Checklist */}
-        <div className="space-y-5">
-          {ROADMAP_MODULES.map((module) => {
-            const moduleCompleted = module.items.filter((i) => completedItems.includes(i.id)).length;
-            const modulePercent = Math.round((moduleCompleted / module.items.length) * 100);
-
-            return (
-              <div
-                key={module.id}
-                className="p-5 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-4"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2.5">
-                      <h4 className="text-sm font-bold text-white">{module.title}</h4>
-                      <span className="px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-[10px] text-teal-300 font-mono">
-                        {module.badge}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-0.5">{module.description}</p>
-                  </div>
-                  <span className="text-xs font-mono text-slate-400 self-start sm:self-auto">
-                    {moduleCompleted}/{module.items.length} усвоени ({modulePercent}%)
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
-                  {module.items.map((item) => {
-                    const isChecked = completedItems.includes(item.id);
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => toggleItem(item.id)}
-                        className={`p-3 rounded-lg border transition-all cursor-pointer flex items-start gap-3 select-none ${
-                          isChecked
-                            ? 'bg-emerald-500/10 border-emerald-500/40 text-slate-200'
-                            : 'bg-slate-900/60 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-300'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {}}
-                          className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-0 cursor-pointer"
-                        />
-                        <div>
-                          <div className={`text-xs font-bold ${isChecked ? 'text-white' : 'text-slate-300'}`}>
-                            {item.label}
-                          </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                            {item.desc}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        )}
       </div>
     </div>
   );

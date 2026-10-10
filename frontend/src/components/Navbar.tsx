@@ -32,6 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const navItems = [
     { id: 'jobs', label: 'Обяви & Табло' },
     { id: 'search', label: 'Търсене & Скрапване' },
+    { id: 'roadmap', label: 'План & Портфолио' },
     { id: 'profile', label: 'CV & Профил' },
     { id: 'insights', label: 'Пазарен Анализ' },
     { id: 'settings', label: 'Настройки' },

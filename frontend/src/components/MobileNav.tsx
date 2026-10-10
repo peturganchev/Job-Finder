@@ -5,6 +5,7 @@ import {
   User,
   TrendingUp,
   Settings,
+  Award,
 } from 'lucide-react';
 
 interface MobileNavProps {
@@ -21,9 +22,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   const tabs = [
     { id: 'jobs', label: 'Обяви', icon: Briefcase, badge: jobsCount },
     { id: 'search', label: 'Търсене', icon: Search },
-    { id: 'profile', label: 'CV Профил', icon: User },
+    { id: 'roadmap', label: 'План', icon: Award },
+    { id: 'profile', label: 'Профил', icon: User },
     { id: 'insights', label: 'Анализ', icon: TrendingUp },
-    { id: 'settings', label: 'Настройки', icon: Settings },
+    { id: 'settings', label: 'Опции', icon: Settings },
   ];
 
   return (
