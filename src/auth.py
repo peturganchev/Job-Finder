@@ -29,17 +29,51 @@ def is_auth_enabled() -> bool:
 
 
 def get_current_user() -> Optional[Dict[str, Any]]:
-    """Връща текущо логнатия потребител от сесията или от запазена бисквитка."""
+    """Връща текущо логнатия потребител от сесията или от запазена бисквитка, с автоматичен рефреш на токена."""
+    user = None
     if "user" in st.session_state and st.session_state["user"]:
-        return st.session_state["user"]
-        
-    # Проверка за запазена сесия след рефреш
-    cookie_user = controller.get("job_finder_session")
-    if cookie_user:
-        st.session_state["user"] = cookie_user
-        return cookie_user
-        
-    return None
+        user = st.session_state["user"]
+    else:
+        # Проверка за запазена сесия след рефреш
+        cookie_user = controller.get("job_finder_session")
+        if cookie_user:
+            user = cookie_user
+            st.session_state["user"] = user
+
+    if not user:
+        return None
+
+    client = get_supabase_client()
+    if client and user.get("access_token"):
+        # Проверяваме дали токенът все още е валиден през Supabase Auth
+        try:
+            u_check = client.auth.get_user(user["access_token"])
+            if not u_check or not u_check.user:
+                raise ValueError("Невалиден или изтекъл токен")
+        except Exception:
+            # Токенът е изтекъл или невалиден -> Опитваме авто-рефреш с refresh_token
+            refreshed = False
+            if user.get("refresh_token"):
+                try:
+                    res = client.auth.refresh_session(user["refresh_token"])
+                    if res and res.session:
+                        user["access_token"] = res.session.access_token
+                        user["refresh_token"] = res.session.refresh_token
+                        st.session_state["user"] = user
+                        controller.set("job_finder_session", user, max_age=30 * 24 * 60 * 60)
+                        refreshed = True
+                except Exception as ref_err:
+                    print(f"⚠️ Грешка при рефреш на сесия: {ref_err}")
+            
+            if not refreshed:
+                # Ако няма refresh_token или рефрешът е неуспешен, изчистваме остарялата сесия
+                print("ℹ️ Сесията е изтекла. Изчистване на бисквитката.")
+                if "user" in st.session_state:
+                    del st.session_state["user"]
+                controller.remove("job_finder_session")
+                return None
+
+    return user
 
 
 def sign_in_user(email: str, password: str) -> tuple[bool, str]:
@@ -53,7 +87,8 @@ def sign_in_user(email: str, password: str) -> tuple[bool, str]:
             user_data = {
                 "id": str(res.user.id),
                 "email": res.user.email,
-                "access_token": res.session.access_token if res.session else None
+                "access_token": res.session.access_token if res.session else None,
+                "refresh_token": res.session.refresh_token if res.session else None
             }
             st.session_state["user"] = user_data
             # Запазваме сесията в бисквитка за 30 дни

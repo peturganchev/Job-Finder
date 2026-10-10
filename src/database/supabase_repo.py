@@ -215,11 +215,15 @@ class SupabaseRepository:
 
     def get_job_by_id(self, job_id: Union[int, str]) -> Optional[Job]:
         """Връща обява по ID."""
-        res = self.client.table("jobs").select("*").eq("id", str(job_id)).limit(1).execute()
-        if not res.data:
+        try:
+            res = self.client.table("jobs").select("*").eq("id", str(job_id)).limit(1).execute()
+            if not res.data:
+                return None
+            row = res.data[0]
+            return self._format_job(row)
+        except Exception as e:
+            print(f"⚠️ Грешка при извличане на обява {job_id}: {e}")
             return None
-        row = res.data[0]
-        return self._format_job(row)
 
     def get_all_jobs(
         self,
@@ -277,48 +281,74 @@ class SupabaseRepository:
     def get_stats(self) -> Dict[str, Any]:
         """Статистика за събраните обяви."""
         if self.user_id:
-            res = self.client.table("user_jobs").select("status, match_score").eq("user_id", str(self.user_id)).execute()
-            data = res.data
-            total = len(data)
-            scores = [d["match_score"] for d in data if d.get("match_score") is not None]
-            avg_score = round(sum(scores) / len(scores), 1) if scores else 0
-            
-            by_status = {}
-            for d in data:
-                s = d.get("status", "new")
-                by_status[s] = by_status.get(s, 0) + 1
+            try:
+                res = self.client.table("user_jobs").select("status, match_score").eq("user_id", str(self.user_id)).execute()
+                data = res.data or []
+                total = len(data)
+                scores = [d["match_score"] for d in data if d.get("match_score") is not None]
+                avg_score = round(sum(scores) / len(scores), 1) if scores else 0
                 
-            return {
-                "total_jobs": total,
-                "avg_match_score": avg_score,
-                "by_status": by_status,
-                "by_source": {}
-            }
+                by_status = {}
+                for d in data:
+                    s = d.get("status", "new")
+                    by_status[s] = by_status.get(s, 0) + 1
+                    
+                return {
+                    "total_jobs": total,
+                    "avg_match_score": avg_score,
+                    "by_status": by_status,
+                    "by_source": {}
+                }
+            except Exception as e:
+                print(f"⚠️ Грешка при извличане на статистика за потребител от Supabase: {e}")
+                return {
+                    "total_jobs": 0,
+                    "avg_match_score": 0,
+                    "by_status": {},
+                    "by_source": {}
+                }
         else:
-            res = self.client.table("jobs").select("id", count="exact").execute()
-            return {
-                "total_jobs": res.count or 0,
-                "avg_match_score": 0,
-                "by_status": {},
-                "by_source": {}
-            }
+            try:
+                res = self.client.table("jobs").select("id", count="exact").execute()
+                return {
+                    "total_jobs": res.count or 0,
+                    "avg_match_score": 0,
+                    "by_status": {},
+                    "by_source": {}
+                }
+            except Exception as e:
+                print(f"⚠️ Грешка при извличане на глобална статистика от Supabase: {e}")
+                return {
+                    "total_jobs": 0,
+                    "avg_match_score": 0,
+                    "by_status": {},
+                    "by_source": {}
+                }
 
     def delete_job(self, job_id: Union[int, str]) -> bool:
         """Изтрива обява от списъка на потребителя."""
         if self.user_id:
-            res = self.client.table("user_jobs").delete().eq("user_id", str(self.user_id)).eq("job_id", str(job_id)).execute()
-            return len(res.data) > 0
+            try:
+                res = self.client.table("user_jobs").delete().eq("user_id", str(self.user_id)).eq("job_id", str(job_id)).execute()
+                return len(res.data or []) > 0
+            except Exception as e:
+                print(f"⚠️ Грешка при изтриване на обява {job_id}: {e}")
+                return False
         return False
 
     def delete_all_jobs(self, only_new: bool = False) -> int:
         """Изчиства обявите за дадения потребител."""
         if not self.user_id:
             return 0
-        query = self.client.table("user_jobs").delete().eq("user_id", str(self.user_id))
-        if only_new:
-            query = query.eq("status", "new")
-        res = query.execute()
-        return len(res.data)
+        try:
+            query = self.client.table("user_jobs").delete().eq("user_id", str(self.user_id))
+            if only_new:
+                query = query.eq("status", "new")
+            res = query.execute()
+            return len(res.data or [])
+        except Exception as e:
+            print(f"⚠️ Грешка при изчистване на обяви: {e}")
+            return 0
 
     def get_all_descriptions_for_market_analysis(self, limit: int = 100) -> List[Dict[str, str]]:
         """Връща заглавия и описания на обяви за извличане на пазарни инсайти с Gemini."""
@@ -385,9 +415,13 @@ class SupabaseRepository:
 
     def get_all_search_keywords(self) -> List[str]:
         """Уникални ключови думи в базата."""
-        res = self.client.table("jobs").select("search_keyword").execute()
-        keywords = {r["search_keyword"] for r in res.data if r.get("search_keyword")}
-        return sorted(list(keywords))
+        try:
+            res = self.client.table("jobs").select("search_keyword").execute()
+            keywords = {r["search_keyword"] for r in (res.data or []) if r.get("search_keyword")}
+            return sorted(list(keywords))
+        except Exception as e:
+            print(f"⚠️ Грешка при зареждане на ключови думи: {e}")
+            return []
 
     def _format_job(self, data: dict) -> Job:
         """Преобразува dictionary от Supabase в Job обект."""
