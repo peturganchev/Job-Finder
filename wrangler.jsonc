@@ -13,7 +13,7 @@
     "not_found_handling": "single-page-application"
   },
   "vars": {
-    "BACKEND_API_URL": "https://api.job-finder.archevyn.dev"
+    "BACKEND_API_URL": "https://job-finder-5bbc.onrender.com"
   },
   "routes": [
     {

@@ -1,28 +1,28 @@
 # 📜 Job-Finder v1: Legacy Streamlit Dashboard
 
-Този модул съдържа първоначалната имплементация на интерфейса за **Job-Finder v1**, изградена с **Streamlit**.
+This module preserves the original prototype implementation of **Job-Finder v1**, developed with **Streamlit**.
 
 ---
 
-## 🎯 Исторически Контекст и Еволюция към v2
+## 🎯 Historical Context & Migration to v2
 
-Във версия 1 проектът стартира като бърз прототип с монолитен Streamlit интерфейс (`app.py`), съчетаващ Python скрапъри и Gemini анализ.
+In version 1, the project began as a rapid prototype combining Python scrapers, local SQLite storage, and Google Gemini evaluation inside a single Streamlit monolith (`app.py`).
 
-С разрастването на функциите (автентикация, мулти-тенант сигурност, Kanban табло, AI пазарен анализ и мобилна оптимизация) беше взето стратегическо архитектурно решение за **Миграция към v2**:
-1. **Бекенд:** Модулен **FastAPI REST API** (`src/api/`) с асинхронни бекграунд задачи и стрийминг на логове.
-2. **Фронтенд:** Модерен **React 18 + Vite + TypeScript + Tailwind CSS** SPA клиент (`frontend/`).
-3. **База данни & Сигурност:** **Supabase PostgreSQL** с пълна изолация чрез Row-Level Security (RLS).
+As the platform evolved to require multi-tenant authentication, cloud data isolation via PostgreSQL, a mobile-first Kanban application board, and real-time streaming scraping telemetry, a strategic architectural transition to **Job-Finder v2** was implemented:
+1. **Backend:** Replaced with a modular **FastAPI REST API** (`src/api/`) supporting asynchronous tasks and Server-Sent Events (SSE).
+2. **Frontend:** Upgraded to a responsive **React 18 + Vite + TypeScript + Tailwind CSS** SPA client (`frontend/`).
+3. **Database & Security:** Migrated to **Supabase PostgreSQL** utilizing strict Row-Level Security (RLS) policies.
 
 ---
 
-## 🚀 Как се стартира Legacy Streamlit Dashboard (по желание)
+## 🚀 Running the Legacy Streamlit Dashboard
 
-Ако желаете да разгледате старата версия за сравнение:
+For historical comparison or review:
 
 ```bash
 streamlit run legacy/streamlit_app.py
 ```
-или през главния CLI инструмент:
+or via the root CLI utility:
 ```bash
 python run.py --legacy
 ```
