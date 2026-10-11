@@ -282,22 +282,26 @@ class SupabaseRepository:
         """Статистика за събраните обяви."""
         if self.user_id:
             try:
-                res = self.client.table("user_jobs").select("status, match_score").eq("user_id", str(self.user_id)).execute()
+                res = self.client.table("user_jobs").select("status, match_score, jobs(source)").eq("user_id", str(self.user_id)).execute()
                 data = res.data or []
                 total = len(data)
                 scores = [d["match_score"] for d in data if d.get("match_score") is not None]
                 avg_score = round(sum(scores) / len(scores), 1) if scores else 0
                 
                 by_status = {}
+                by_source = {}
                 for d in data:
                     s = d.get("status", "new")
                     by_status[s] = by_status.get(s, 0) + 1
+                    job_obj = d.get("jobs") or {}
+                    src = job_obj.get("source") or "other"
+                    by_source[src] = by_source.get(src, 0) + 1
                     
                 return {
                     "total_jobs": total,
                     "avg_match_score": avg_score,
                     "by_status": by_status,
-                    "by_source": {}
+                    "by_source": by_source
                 }
             except Exception as e:
                 print(f"⚠️ Грешка при извличане на статистика за потребител от Supabase: {e}")
@@ -309,15 +313,28 @@ class SupabaseRepository:
                 }
         else:
             try:
-                res = self.client.table("jobs").select("id", count="exact").execute()
+                res = self.client.table("jobs").select("id, source, match_score").execute()
+                data = res.data or []
+                by_source = {}
+                scores = [d["match_score"] for d in data if d.get("match_score") is not None]
+                avg_score = round(sum(scores) / len(scores), 1) if scores else 0
+                for d in data:
+                    src = d.get("source") or "other"
+                    by_source[src] = by_source.get(src, 0) + 1
                 return {
-                    "total_jobs": res.count or 0,
+                    "total_jobs": len(data),
+                    "avg_match_score": avg_score,
+                    "by_status": {},
+                    "by_source": by_source
+                }
+            except Exception as e:
+                print(f"⚠️ Грешка при извличане на глобална статистика от Supabase: {e}")
+                return {
+                    "total_jobs": 0,
                     "avg_match_score": 0,
                     "by_status": {},
                     "by_source": {}
                 }
-            except Exception as e:
-                print(f"⚠️ Грешка при извличане на глобална статистика от Supabase: {e}")
                 return {
                     "total_jobs": 0,
                     "avg_match_score": 0,
