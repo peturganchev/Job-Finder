@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "job-finder",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "assets": {
+    "directory": "./frontend/dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    "BACKEND_API_URL": "https://api.job-finder.archevyn.dev"
+  },
+  "routes": [
+    {
+      "pattern": "job-finder.archevyn.dev",
+      "custom_domain": true
+    }
+  ]
+}
