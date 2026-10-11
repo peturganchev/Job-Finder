@@ -111,6 +111,7 @@ def update_settings(
     req: SettingsUpdateRequest,
     user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
 ):
+    print(f"📥 [update_settings] Incoming request. user_id={user.get('id') if user else None}, email={user.get('email') if user else None}, keywords={req.search_keywords}")
     sm = SettingsManager()
     local_settings = sm.load()
 

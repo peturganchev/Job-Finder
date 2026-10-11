@@ -25,6 +25,7 @@ import { useAuth } from '../context/AuthContext';
 
 interface SearchViewProps {
   onViewJobs: () => void;
+  onOpenAuth?: () => void;
 }
 
 const AVAILABLE_SOURCES = [
@@ -39,7 +40,7 @@ const getStorageKey = (userId?: string | null) =>
   userId ? `jobfinder_v2_keywords_${userId}` : 'jobfinder_v2_keywords_guest';
 const ACTIVE_TASK_KEY = 'jobfinder_active_search_task_id';
 
-export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
+export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }) => {
   const { user, session } = useAuth();
   const storageKey = getStorageKey(user?.id);
 
@@ -212,18 +213,32 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
   };
 
   const saveKeywordsToDb = async (kws: string[]) => {
-    if (!user) return;
-    try {
-      await supabase.from('user_settings').upsert({
+    if (!user) {
+      throw new Error('Не сте влезли в профила си. Моля, влезте през бутона "Вход", за да запазите настройките в Supabase базата данни.');
+    }
+    
+    // 1. Direct Supabase Upsert (with onConflict on user_id)
+    const { error } = await supabase.from('user_settings').upsert(
+      {
         user_id: user.id,
         keywords: kws,
         updated_at: new Date().toISOString(),
-      });
-      if (session?.access_token) {
-        apiUpdateSettings({ search_keywords: kws }, session.access_token).catch(() => {});
+      },
+      { onConflict: 'user_id' }
+    );
+
+    if (error) {
+      console.error('❌ Supabase user_settings upsert error:', error);
+      throw new Error(`Грешка от Supabase: ${error.message}`);
+    }
+
+    // 2. Also sync to FastAPI backend
+    if (session?.access_token) {
+      try {
+        await apiUpdateSettings({ search_keywords: kws }, session.access_token);
+      } catch (err) {
+        console.warn('Backend settings sync warning:', err);
       }
-    } catch (e) {
-      console.warn('Error saving keywords to Supabase:', e);
     }
   };
 
@@ -251,7 +266,8 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
   // Explicit save of keywords to Supabase user_settings
   const handleSaveKeywordsToProfile = async () => {
     if (!user) {
-      setErrorMsg('Моля, влезте в профила си, за да запазите ключовите думи в Supabase.');
+      if (onOpenAuth) onOpenAuth();
+      setErrorMsg('⚠️ Не сте влезли в профила си! Моля, влезте през бутона "Вход", за да се запишат настройките във вашия Supabase профил.');
       return;
     }
     setIsSavingKeywords(true);
@@ -261,7 +277,8 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
       setSaveKeywordsSuccess(true);
       setTimeout(() => setSaveKeywordsSuccess(false), 3000);
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Грешка при запис в профила.');
+      const msg = err instanceof Error ? err.message : 'Грешка при запис в Supabase.';
+      setErrorMsg(msg);
     } finally {
       setIsSavingKeywords(false);
     }
@@ -405,14 +422,26 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
         <div className="space-y-4 pt-4 border-t border-slate-800/80">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Search className="w-4 h-4 text-teal-400" />
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-200">
                   Ключови Думи за Търсене ({keywords.length})
                 </label>
+                {user ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>{user.email || 'Supabase Sync'}</span>
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[10px] text-amber-400 font-mono">
+                    ⚠️ Демо режим (Гост)
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Въведете вашите персонализирани ключови думи (чрез тагове или текстов списък). Записват се във вашия Supabase профил.
+                {user
+                  ? 'Въведете вашите персонализирани ключови думи. Записват се сигурно във вашия Supabase акаунт.'
+                  : 'За да се запишат в Supabase базата данни, е необходимо да влезете в профила си.'}
               </p>
             </div>
 
@@ -490,6 +519,24 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
               </button>
             </div>
           </div>
+
+          {errorMsg && (
+            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center justify-between gap-3 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span className="leading-snug">{errorMsg}</span>
+              </div>
+              {!user && onOpenAuth && (
+                <button
+                  type="button"
+                  onClick={onOpenAuth}
+                  className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition shrink-0"
+                >
+                  Вход
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Active Editor (Tags or Textarea) */}
           {editorMode === 'tags' ? (

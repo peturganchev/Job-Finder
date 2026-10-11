@@ -205,6 +205,7 @@ function AppContent() {
                 setCurrentTab('jobs');
                 loadJobs();
               }}
+              onOpenAuth={() => setIsAuthOpen(true)}
             />
           </ProtectedRoute>
         )}
