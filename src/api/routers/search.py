@@ -161,8 +161,11 @@ def execute_search_job(
             _update_task(task_id, log_msg=f"🔍 Обхождане на {scraper.name}...", user_id=user_id)
             try:
                 found = scraper.search(keywords=keywords, max_jobs=max_jobs)
+                scraper_added = 0
+                scraper_skipped = 0
                 for job in found:
                     if repo.user_has_job(job.url):
+                        scraper_skipped += 1
                         continue
 
                     # Details extraction
@@ -180,12 +183,32 @@ def execute_search_job(
                         job.id = job_db_id
                         new_jobs.append(job)
                         total_found += 1
+                        scraper_added += 1
                         _update_task(
                             task_id,
                             jobs_found=total_found,
                             log_msg=f"   ✨ Намерена: {job.title} @ {job.company}",
                             user_id=user_id
                         )
+
+                if len(found) == 0:
+                    _update_task(
+                        task_id,
+                        log_msg=f"   ℹ️ {scraper.name}: 0 нови позиции (проверете филтрите или е засечена бот-защита).",
+                        user_id=user_id
+                    )
+                elif scraper_added == 0 and scraper_skipped > 0:
+                    _update_task(
+                        task_id,
+                        log_msg=f"   ℹ️ {scraper.name}: Всички {scraper_skipped} намерени позиции вече са в каталога ви.",
+                        user_id=user_id
+                    )
+                elif scraper_skipped > 0:
+                    _update_task(
+                        task_id,
+                        log_msg=f"   ℹ️ {scraper.name}: {scraper_added} нови добавени ({scraper_skipped} съществуващи пропуснати).",
+                        user_id=user_id
+                    )
 
             except Exception as scraper_err:
                 _update_task(task_id, log_msg=f"⚠️ Грешка при {scraper.name}: {scraper_err}", user_id=user_id)

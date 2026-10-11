@@ -12,9 +12,13 @@ from typing import Tuple, Optional
 from playwright.sync_api import sync_playwright, Playwright, BrowserContext, Page
 
 try:
-    from playwright_stealth import stealth_sync
-except ImportError:
-    stealth_sync = None
+    from playwright_stealth.stealth import Stealth
+    apply_stealth = lambda p: Stealth().apply_stealth_sync(p)
+except Exception:
+    try:
+        from playwright_stealth import stealth_sync as apply_stealth
+    except Exception:
+        apply_stealth = None
 
 
 def load_settings() -> dict:
@@ -106,9 +110,9 @@ class BrowserManager:
         page = context.pages[0] if context.pages else context.new_page()
 
         # Прилагаме stealth скриптове, ако библиотеката е налична
-        if stealth_sync:
+        if apply_stealth:
             try:
-                stealth_sync(page)
+                apply_stealth(page)
             except Exception:
                 pass
 
