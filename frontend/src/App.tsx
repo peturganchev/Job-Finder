@@ -13,15 +13,14 @@ import { ProfileView } from './components/ProfileView';
 import { InsightsView } from './components/InsightsView';
 import { SettingsView } from './components/SettingsView';
 import { RoadmapPortfolioView } from './components/RoadmapPortfolioView';
-import { ProtectedRoute } from './components/ProtectedRoute';
 import { apiFetchJobs, apiUpdateJobStatus, apiDeleteJob, apiFetchMarketStats } from './lib/api';
 import type { Job, ApplicationStatus, MarketStats } from './types';
 import { API_BASE_URL } from './lib/supabase';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Lock, LogIn, Cpu } from 'lucide-react';
 
 
 function AppContent() {
-  const { user, session } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
       const hash = window.location.hash.replace('#', '');
@@ -101,9 +100,16 @@ function AppContent() {
       })
       .catch(() => setApiHealthy(false));
 
-    loadJobs();
-    loadStats();
-  }, [loadJobs, loadStats]);
+    if (user) {
+      loadJobs();
+      loadStats();
+    } else {
+      setJobs([]);
+      setMarketStats(null);
+      setLoadingJobs(false);
+      setLoadingStats(false);
+    }
+  }, [user, loadJobs, loadStats]);
 
   // Optimistic Job Status Update
   const handleStatusChange = async (jobId: string | number, newStatus: ApplicationStatus) => {
@@ -135,6 +141,20 @@ function AppContent() {
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#090d16] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 animate-pulse">
+            <Cpu className="w-7 h-7 text-slate-950 font-bold" />
+          </div>
+          <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs text-slate-400 font-medium tracking-wide">Проверка на защитена сесия...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-300">
       {/* Navigation */}
@@ -149,105 +169,124 @@ function AppContent() {
 
       {/* Main View Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 pb-24 md:pb-8 flex flex-col">
-        {/* Guest Preview Notice */}
-        {!user && (
-          <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900/60 to-slate-900/40 border border-emerald-500/20 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3.5">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
-                <Sparkles className="w-5 h-5" />
+        {!user ? (
+          <div className="flex-1 flex items-center justify-center py-8 sm:py-16">
+            <div className="max-w-xl w-full mx-auto p-8 sm:p-12 rounded-3xl bg-slate-900/80 border border-slate-800 shadow-2xl backdrop-blur-xl text-center relative overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+              {/* Background Ambient Glow */}
+              <div className="absolute -top-24 -left-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/10">
+                <Lock className="w-8 h-8" />
               </div>
-              <div>
-                <h4 className="text-sm font-bold text-white">
-                  Разглеждате в демо режим (Гост)
-                </h4>
-                <p className="text-xs text-slate-400">
-                  Влезте в профила си или поискайте достъп, за да запазвате персонализирани Kanban статуси и генерирани мотивационни писма.
-                </p>
+
+              <span className="inline-block px-3 py-1 rounded-full text-[11px] font-bold tracking-wide uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 mb-3">
+                Защитена AI Платформа
+              </span>
+
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-3">
+                Изисква се Вход в Системата
+              </h2>
+
+              <p className="text-sm text-slate-300 leading-relaxed mb-8 max-w-md mx-auto">
+                За достъп до обявите, Kanban таблото, автономния скрапър, пазарните анализи и AI инструментите, моля влезте с вашия профил.
+              </p>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row gap-3 justify-center mb-8">
+                <button
+                  onClick={() => setIsAuthOpen(true)}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Вход в Профила</span>
+                </button>
+                <button
+                  onClick={() => setIsWaitlistOpen(true)}
+                  className="px-6 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 font-semibold text-sm flex items-center justify-center gap-2 transition hover:bg-slate-700/80"
+                >
+                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                  <span>Поискай достъп (Waitlist)</span>
+                </button>
               </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => setIsWaitlistOpen(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition"
-              >
-                Поискай достъп
-              </button>
-              <button
-                onClick={() => setIsAuthOpen(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition"
-              >
-                Вход
-              </button>
+
+              {/* Security info card */}
+              <div className="pt-6 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+                <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/60">
+                  <h4 className="text-xs font-bold text-slate-200 mb-1">🔐 Row-Level Security</h4>
+                  <p className="text-[11px] text-slate-400">Пълна изолация на данните и настройките в Supabase.</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/60">
+                  <h4 className="text-xs font-bold text-slate-200 mb-1">🤖 Autonomous Agent</h4>
+                  <p className="text-[11px] text-slate-400">Playwright скрапване на dev.bg, jobs.bg и LinkedIn.</p>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950/50 border border-slate-800/60">
+                  <h4 className="text-xs font-bold text-slate-200 mb-1">⚡ Gemini 2.5 Flash</h4>
+                  <p className="text-[11px] text-slate-400">Моментален Match Score и мотивационни писма.</p>
+                </div>
+              </div>
             </div>
           </div>
-        )}
+        ) : (
+          <>
+            {/* Tab 1: Jobs & Kanban Dashboard */}
+            {currentTab === 'jobs' && (
+              <JobsListView
+                jobs={jobs}
+                loading={loadingJobs}
+                onRefresh={loadJobs}
+                onSelectJob={(j) => setSelectedJob(j)}
+                onStatusChange={handleStatusChange}
+              />
+            )}
 
-        {/* Tab 1: Jobs & Kanban Dashboard */}
-        {currentTab === 'jobs' && (
-          <JobsListView
-            jobs={jobs}
-            loading={loadingJobs}
-            onRefresh={loadJobs}
-            onSelectJob={(j) => setSelectedJob(j)}
-            onStatusChange={handleStatusChange}
-          />
-        )}
+            {/* Tab 2: Autonomous Scraper & Search */}
+            {currentTab === 'search' && (
+              <SearchView
+                onViewJobs={() => {
+                  setCurrentTab('jobs');
+                  loadJobs();
+                }}
+                onOpenAuth={() => setIsAuthOpen(true)}
+              />
+            )}
 
-        {/* Tab 2: Autonomous Scraper & Search */}
-        {currentTab === 'search' && (
-          <ProtectedRoute
-            onOpenAuth={() => setIsAuthOpen(true)}
-            onOpenWaitlist={() => setIsWaitlistOpen(true)}
-            featureName="автономното търсене и скрапване"
-          >
-            <SearchView
-              onViewJobs={() => {
-                setCurrentTab('jobs');
-                loadJobs();
-              }}
-              onOpenAuth={() => setIsAuthOpen(true)}
-            />
-          </ProtectedRoute>
-        )}
+            {/* Tab 3: Skill Roadmap & Portfolio */}
+            {currentTab === 'roadmap' && (
+              <RoadmapPortfolioView />
+            )}
 
-        {/* Tab 3: Skill Roadmap & Portfolio */}
-        {currentTab === 'roadmap' && (
-          <RoadmapPortfolioView />
-        )}
+            {/* Tab 4: Profile & CV Intelligence */}
+            {currentTab === 'profile' && (
+              <ProfileView />
+            )}
 
-        {/* Tab 4: Profile & CV Intelligence */}
-        {currentTab === 'profile' && (
-          <ProtectedRoute
-            onOpenAuth={() => setIsAuthOpen(true)}
-            onOpenWaitlist={() => setIsWaitlistOpen(true)}
-            featureName="качването на CV и редактирането на умения"
-          >
-            <ProfileView />
-          </ProtectedRoute>
-        )}
+            {/* Tab 5: Market Insights & Analytics */}
+            {currentTab === 'insights' && (
+              <InsightsView
+                stats={marketStats}
+                jobs={jobs}
+                loadingStats={loadingStats}
+                onRefreshStats={loadStats}
+              />
+            )}
 
-        {/* Tab 4: Market Insights & Analytics */}
-        {currentTab === 'insights' && (
-          <InsightsView
-            stats={marketStats}
-            jobs={jobs}
-            loadingStats={loadingStats}
-            onRefreshStats={loadStats}
-          />
-        )}
-
-        {/* Tab 5: System Settings & Gemini BYOK */}
-        {currentTab === 'settings' && (
-          <SettingsView onOpenAdmin={() => setIsAdminOpen(true)} />
+            {/* Tab 6: System Settings & Gemini BYOK */}
+            {currentTab === 'settings' && (
+              <SettingsView onOpenAdmin={() => setIsAdminOpen(true)} />
+            )}
+          </>
         )}
       </main>
 
-      {/* Mobile Bottom Navigation Bar */}
-      <MobileNav
-        currentTab={currentTab}
-        onSelectTab={setCurrentTab}
-        jobsCount={jobs.length}
-      />
+      {/* Mobile Bottom Navigation Bar - Only visible when user is logged in */}
+      {user && (
+        <MobileNav
+          currentTab={currentTab}
+          onSelectTab={setCurrentTab}
+          jobsCount={jobs.length}
+        />
+      )}
 
 
       {/* Modals */}
