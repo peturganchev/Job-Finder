@@ -22,16 +22,28 @@ class JobsBgScraper(BaseScraper):
         }
         self.client = httpx.Client(headers=self.headers, follow_redirects=True, timeout=15.0)
 
-    def _wait_for_cloudflare(self, timeout_sec: int = 15):
+    def _wait_for_cloudflare(self, timeout_sec: int = 10) -> bool:
         """Проверява и изчаква автоматичното преминаване на Cloudflare верификацията."""
         if not self.page:
             return True
         start = time.time()
         while time.time() - start < timeout_sec:
-            title = self.page.title()
-            if "Just a moment" not in title and "Cloudflare" not in title:
-                return True
-            print("🛡️ [jobs.bg] Засечена Cloudflare проверка, изчакване...")
+            try:
+                title = self.page.title()
+                content = self.page.content()
+                if "Just a moment" not in title and "Cloudflare" not in title and "captcha-delivery" not in content:
+                    return True
+                print("🛡️ [jobs.bg] Засечена Cloudflare / DataDome проверка, изчакване...")
+                # Опит за клик на Turnstile чекбокс ако има такъв
+                for sel in ["iframe[src*='cloudflare']", "iframe[src*='turnstile']", "input[type='checkbox']"]:
+                    elem = self.page.query_selector(sel)
+                    if elem:
+                        box = elem.bounding_box()
+                        if box:
+                            self.page.mouse.click(box["x"] + 25, box["y"] + 25)
+                            time.sleep(1.5)
+            except Exception:
+                pass
             time.sleep(2)
         return False
 
@@ -53,8 +65,11 @@ class JobsBgScraper(BaseScraper):
                 print(f"🔍 [jobs.bg] Търсене за '{kw}': {search_url}")
                 if self.page:
                     self.page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
-                    self._wait_for_cloudflare()
-                    time.sleep(random.uniform(1.5, 3.0))
+                    cf_ok = self._wait_for_cloudflare(timeout_sec=8)
+                    if not cf_ok:
+                        print(f"🛡️ [jobs.bg] Засечена е активна защита при '{kw}'. Прекъсване на jobs.bg за предпазване от блокиране.")
+                        break
+                    time.sleep(random.uniform(1.0, 2.0))
                     for _ in range(2):
                         self.page.mouse.wheel(0, 400)
                         time.sleep(0.5)
@@ -63,7 +78,7 @@ class JobsBgScraper(BaseScraper):
                     resp = self.client.get(search_url)
                     if resp.status_code != 200 or "Just a moment" in resp.text:
                         print("ℹ️ [jobs.bg] Изисква браузър за преминаване на проверката.")
-                        continue
+                        break
                     html = resp.text
                 soup = BeautifulSoup(html, "html.parser")
 
