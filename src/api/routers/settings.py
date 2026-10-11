@@ -37,16 +37,19 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
     local_settings = sm.load()
 
     user_id = user["id"] if user else None
+    access_token = user.get("access_token") if user else None
     client = get_supabase_client()
 
     db_settings = {}
     if client and user_id:
         try:
-            res = client.table("user_settings").select("*").eq("user_id", user_id).limit(1).execute()
+            if access_token:
+                client.postgrest.auth(access_token)
+            res = client.table("user_settings").select("*").eq("user_id", str(user_id)).limit(1).execute()
             if res.data:
                 db_settings = res.data[0]
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"⚠️ Error loading Supabase user_settings: {e}")
 
     # Resolve active API key
     raw_api_key = (
@@ -134,29 +137,33 @@ def update_settings(
 
     # Sync to Supabase user_settings table if authenticated
     user_id = user["id"] if user else None
+    access_token = user.get("access_token") if user else None
     client = get_supabase_client()
     if client and user_id:
         try:
+            if access_token:
+                client.postgrest.auth(access_token)
             update_payload: Dict[str, Any] = {
-                "user_id": user_id,
+                "user_id": str(user_id),
             }
             if req.gemini_api_key is not None:
                 update_payload["gemini_api_key"] = req.gemini_api_key.strip() or None
             if req.gemini_model is not None:
                 update_payload["gemini_model"] = req.gemini_model.strip()
             if req.blacklist_title is not None:
-                update_payload["blacklist_titles"] = local_settings.blacklist_title
+                update_payload["blacklist_titles"] = [t.strip() for t in req.blacklist_title if t.strip()]
             if req.blacklist_companies is not None:
-                update_payload["blacklist_companies"] = local_settings.blacklist_companies
+                update_payload["blacklist_companies"] = [c.strip() for c in req.blacklist_companies if c.strip()]
             if req.search_keywords is not None:
-                update_payload["keywords"] = local_settings.search.keywords
+                update_payload["keywords"] = [k.strip() for k in req.search_keywords if k.strip()]
             if req.roadmap_progress is not None:
                 update_payload["roadmap_progress"] = req.roadmap_progress
 
-            client.table("user_settings").upsert(update_payload, on_conflict="user_id").execute()
+            res = client.table("user_settings").upsert(update_payload, on_conflict="user_id").execute()
+            if not res.data:
+                print(f"⚠️ Warning: user_settings upsert returned empty data for user {user_id}")
         except Exception as e:
-            # Continue even if Supabase sync fails
-            pass
+            print(f"⚠️ Error updating Supabase user_settings: {e}")
 
     return StandardMessageResponse(
         success=True,

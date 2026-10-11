@@ -31,7 +31,6 @@ const AVAILABLE_SOURCES = [
   { id: 'dev.bg', name: 'dev.bg', desc: 'България (IT & AI роли)', default: true },
   { id: 'jobs.bg', name: 'jobs.bg', desc: 'Водещ портал за работа в България', default: true },
   { id: 'linkedin', name: 'LinkedIn', desc: 'Професионална мрежа & Remote', default: true },
-  { id: 'himalayas', name: 'Himalayas', desc: 'Дистанционни роли от световен мащаб', default: true },
   { id: 'euremotejobs', name: 'EU Remote Jobs', desc: 'Европейски дистанционни AI роли', default: true },
   { id: 'hackernews', name: 'Hacker News', desc: 'YCombinator "Who is hiring" обяви', default: true },
 ];
@@ -115,7 +114,6 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
     'dev.bg',
     'jobs.bg',
     'linkedin',
-    'himalayas',
     'euremotejobs',
     'hackernews',
   ]);
@@ -157,7 +155,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
   const [isStarting, setIsStarting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sync keywords to localStorage
+  // Sync keywords to localStorage on every change
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(keywords));
@@ -166,12 +164,14 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
     }
   }, [keywords]);
 
-  // Load saved keywords from Supabase profile on mount if authenticated
+  // Load saved keywords from Supabase profile only if local storage has not been customized
   useEffect(() => {
     if (session?.access_token) {
       apiGetSettings(session.access_token)
         .then((settings) => {
+          const savedLocal = localStorage.getItem(STORAGE_KEY);
           if (
+            !savedLocal &&
             settings.search_keywords &&
             Array.isArray(settings.search_keywords) &&
             settings.search_keywords.length > 0
@@ -317,6 +317,10 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
     setIsStarting(true);
     setErrorMsg(null);
     try {
+      // Auto-save active keywords to user profile in Supabase in background
+      if (session?.access_token) {
+        apiUpdateSettings({ search_keywords: activeKeywords }, session.access_token).catch(() => {});
+      }
       const res = await apiStartSearch(
         {
           sources: selectedSources,

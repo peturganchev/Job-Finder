@@ -28,21 +28,46 @@ TARGET_TECH_CATALOG = [
 
 @router.get("/stats", response_model=MarketStatsResponse, summary="Get labor market aggregate statistics")
 def get_market_stats(
+    deduplicate: bool = Query(True, description="Filter out duplicate cross-portal postings"),
     repo = Depends(get_repo),
 ):
     """
     Returns aggregate counts, average AI match scores, status breakdowns,
     and top 15 in-demand skills extracted from current job descriptions.
+    Supports deduplication across portals by (company, title) or unique URL.
     """
-    stats = repo.get_stats()
-    raw_jobs = repo.get_all_descriptions_for_market_analysis(limit=100)
+    raw_jobs = repo.get_all_jobs(limit=500)
+
+    if deduplicate:
+        seen = set()
+        jobs = []
+        for j in raw_jobs:
+            comp = (j.company or "").lower().strip()
+            tit = (j.title or "").lower().strip()
+            key = (comp, tit) if comp and tit else (j.url or str(j.id))
+            if key not in seen:
+                seen.add(key)
+                jobs.append(j)
+    else:
+        jobs = raw_jobs
+
+    total_jobs = len(jobs)
+    scores = [j.match_score for j in jobs if j.match_score is not None]
+    avg_score = round(sum(scores) / len(scores), 1) if scores else 0.0
+
+    by_status: Dict[str, int] = {}
+    by_source: Dict[str, int] = {}
+
+    for j in jobs:
+        s = j.status.value if hasattr(j.status, "value") else str(j.status or "new")
+        by_status[s] = by_status.get(s, 0) + 1
+        src = j.source.value if hasattr(j.source, "value") else str(j.source or "other")
+        by_source[src] = by_source.get(src, 0) + 1
 
     # Calculate skill frequency across descriptions
     tech_counter: Dict[str, int] = {}
-    total_analyzed = len(raw_jobs)
-
-    for j in raw_jobs:
-        combined = f"{j.get('title', '')} {j.get('description', '')}".lower()
+    for j in jobs:
+        combined = f"{j.title or ''} {j.description or ''}".lower()
         for tech in TARGET_TECH_CATALOG:
             if re.search(r"\b" + re.escape(tech.lower()) + r"\b", combined):
                 tech_counter[tech] = tech_counter.get(tech, 0) + 1
@@ -53,16 +78,16 @@ def get_market_stats(
         MarketSkillItem(
             skill=tech,
             count=cnt,
-            percentage=round((cnt / max(1, total_analyzed)) * 100, 1)
+            percentage=round((cnt / max(1, total_jobs)) * 100, 1)
         )
         for tech, cnt in sorted_skills
     ]
 
     return MarketStatsResponse(
-        total_jobs=stats.get("total_jobs", 0),
-        avg_match_score=float(stats.get("avg_match_score", 0)),
-        by_status=stats.get("by_status") or {},
-        by_source=stats.get("by_source") or {},
+        total_jobs=total_jobs,
+        avg_match_score=avg_score,
+        by_status=by_status,
+        by_source=by_source,
         top_skills=top_skills_list,
     )
 

@@ -219,9 +219,12 @@ export async function apiParseCVText(
 }
 
 /** Fetch market statistics */
-export async function apiFetchMarketStats(): Promise<MarketStats> {
-  const url = `${API_BASE_URL}/api/market/stats`;
-  const res = await fetch(url);
+export async function apiFetchMarketStats(
+  deduplicate: boolean = true,
+  token?: string | null
+): Promise<MarketStats> {
+  const url = `${API_BASE_URL}/api/market/stats?deduplicate=${deduplicate}`;
+  const res = await fetch(url, { headers: getHeaders(token) });
   if (!res.ok) {
     throw new Error(`Failed to fetch market stats`);
   }
@@ -229,9 +232,12 @@ export async function apiFetchMarketStats(): Promise<MarketStats> {
 }
 
 /** Fetch or generate AI market insights report */
-export async function apiFetchMarketReport(limit: number = 40): Promise<{ report: string; generated_at: string }> {
+export async function apiFetchMarketReport(
+  limit: number = 40,
+  token?: string | null
+): Promise<{ report: string; generated_at: string }> {
   const url = `${API_BASE_URL}/api/market/report?limit=${limit}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: getHeaders(token) });
   if (!res.ok) {
     throw new Error(`Failed to fetch market report`);
   }

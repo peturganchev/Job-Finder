@@ -22,7 +22,31 @@ import { Sparkles } from 'lucide-react';
 
 function AppContent() {
   const { user, session } = useAuth();
-  const [currentTab, setCurrentTab] = useState<string>('jobs');
+  const [currentTab, setCurrentTab] = useState<string>(() => {
+    try {
+      const hash = window.location.hash.replace('#', '');
+      const validTabs = ['jobs', 'search', 'roadmap', 'profile', 'insights', 'settings'];
+      if (hash && validTabs.includes(hash)) {
+        return hash;
+      }
+      const saved = localStorage.getItem('jobfinder_active_tab');
+      if (saved && validTabs.includes(saved)) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'jobs';
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('jobfinder_active_tab', currentTab);
+      window.location.hash = currentTab;
+    } catch {
+      // ignore
+    }
+  }, [currentTab]);
 
   // Modals state
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
@@ -56,18 +80,18 @@ function AppContent() {
     }
   }, [session]);
 
-  // Load market statistics
-  const loadStats = useCallback(async () => {
+  // Load market statistics (with deduplication support)
+  const loadStats = useCallback(async (deduplicate: boolean = true) => {
     setLoadingStats(true);
     try {
-      const data = await apiFetchMarketStats();
+      const data = await apiFetchMarketStats(deduplicate, session?.access_token);
       setMarketStats(data);
     } catch (err) {
       console.error('Error fetching market stats:', err);
     } finally {
       setLoadingStats(false);
     }
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/health`)
@@ -124,7 +148,7 @@ function AppContent() {
       />
 
       {/* Main View Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 flex flex-col">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 pb-24 md:pb-8 flex flex-col">
         {/* Guest Preview Notice */}
         {!user && (
           <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900/60 to-slate-900/40 border border-emerald-500/20 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -250,8 +274,10 @@ function AppContent() {
         onClose={() => setIsAdminOpen(false)}
       />
 
-      {/* Footer */}
-      <Footer />
+      {/* Footer (Desktop & Tablet only) */}
+      <div className="hidden md:block">
+        <Footer />
+      </div>
     </div>
   );
 }

@@ -29,7 +29,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-slate-950/90 backdrop-blur-lg border-t border-slate-800/80 px-2 py-1.5 safe-area-pb">
+    <nav
+      className="fixed bottom-0 inset-x-0 z-[100] md:hidden bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 shadow-[0_-8px_30px_rgba(0,0,0,0.6)] px-2 pt-2"
+      style={{ paddingBottom: 'max(0.6rem, env(safe-area-inset-bottom, 0px))' }}
+    >
       <div className="flex items-center justify-around">
         {tabs.map((tab) => {
           const Icon = tab.icon;

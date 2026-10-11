@@ -70,7 +70,7 @@ export const JobsListView: React.FC<JobsListViewProps> = ({
   const availableSources = useMemo(() => {
     const set = new Set<string>();
     jobs.forEach((j) => {
-      if (j.source) set.add(j.source);
+      if (j.source && j.source !== 'himalayas') set.add(j.source);
     });
     return Array.from(set).sort();
   }, [jobs]);
