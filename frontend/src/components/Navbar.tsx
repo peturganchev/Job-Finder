@@ -65,22 +65,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-1 pl-4 border-l border-slate-800">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => onSelectTab(item.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                  currentTab === item.id
-                    ? 'bg-slate-800 text-emerald-400 border border-slate-700/80'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
+          {/* Desktop Navigation - Only visible when authenticated */}
+          {user && (
+            <nav className="hidden md:flex items-center gap-1 pl-4 border-l border-slate-800">
+              {navItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => onSelectTab(item.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                    currentTab === item.id
+                      ? 'bg-slate-800 text-emerald-400 border border-slate-700/80'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
 
         {/* Status Indicators & Auth Actions */}
