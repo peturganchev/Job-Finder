@@ -177,7 +177,6 @@ export const ProfileView: React.FC = () => {
       const { error } = await supabase.from('user_settings').upsert({
         user_id: user.id,
         profile_data: profileData,
-        keywords: targetRoles.length > 0 ? targetRoles : ['AI Engineer', 'Python'],
         updated_at: new Date().toISOString(),
       });
 

@@ -77,11 +77,12 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
         or local_settings.blacklist_companies
         or []
     )
-    search_keywords = (
-        db_settings.get("keywords")
-        or local_settings.search.keywords
-        or []
-    )
+    if user_id:
+        # For authenticated users, strictly use what is saved in their user_settings (or empty list if none)
+        search_keywords = db_settings.get("keywords") if (db_settings and "keywords" in db_settings and db_settings["keywords"] is not None) else []
+    else:
+        # Fallback to local configuration for unauthenticated guest sessions
+        search_keywords = local_settings.search.keywords or []
     active_sources = sm.enabled_sources()
 
     roadmap_progress = (

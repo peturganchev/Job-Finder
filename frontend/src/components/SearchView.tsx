@@ -14,12 +14,12 @@ import {
   Trash2,
   Copy,
   Check,
-  Layers,
   Bookmark,
   CheckCircle2,
   Info,
 } from 'lucide-react';
-import { apiStartSearch, apiGetSettings, apiUpdateSettings } from '../lib/api';
+import { apiStartSearch, apiUpdateSettings } from '../lib/api';
+import { supabase } from '../lib/supabase';
 import { TerminalLogs } from './TerminalLogs';
 import { useAuth } from '../context/AuthContext';
 
@@ -35,80 +35,13 @@ const AVAILABLE_SOURCES = [
   { id: 'hackernews', name: 'Hacker News', desc: 'YCombinator "Who is hiring" обяви', default: true },
 ];
 
-/** Presets directly matching config/filters.yaml and config/profile.yaml */
-export const KEYWORD_PRESETS = [
-  {
-    id: 'primary',
-    name: '🎯 Основни AI (filters.yaml)',
-    desc: 'Ключовите AI/ML термини за България & Remote',
-    keywords: [
-      'AI Engineer',
-      'Agentic',
-      'LLM',
-      'Generative AI',
-      'Artificial Intelligence',
-      'Machine Learning',
-    ],
-  },
-  {
-    id: 'secondary',
-    name: '⚡ Разширени (filters.yaml)',
-    desc: 'Python AI, LangChain и приложни роли',
-    keywords: [
-      'Python AI',
-      'LangChain',
-      'Prompt Engineer',
-      'AI Developer',
-      'RAG',
-    ],
-  },
-  {
-    id: 'agentic',
-    name: '🤖 Agentic AI Stack',
-    desc: 'LangGraph, CrewAI, AutoGen и автономни агенти',
-    keywords: [
-      'Agentic AI Engineer',
-      'LangGraph',
-      'CrewAI',
-      'AutoGen',
-      'Multi-Agent',
-    ],
-  },
-  {
-    id: 'all',
-    name: '🌟 Всички Препоръчани',
-    desc: 'Пълен пакет от всички 13 ключови търсения',
-    keywords: [
-      'AI Engineer',
-      'Agentic',
-      'LLM',
-      'Generative AI',
-      'Artificial Intelligence',
-      'Machine Learning',
-      'Python AI',
-      'LangChain',
-      'Prompt Engineer',
-      'AI Developer',
-      'Agentic AI Engineer',
-      'LangGraph',
-    ],
-  },
-];
-
-const STORAGE_KEY = 'jobfinder_v2_keywords';
+const getStorageKey = (userId?: string | null) =>
+  userId ? `jobfinder_v2_keywords_${userId}` : 'jobfinder_v2_keywords_guest';
 const ACTIVE_TASK_KEY = 'jobfinder_active_search_task_id';
 
-const DEFAULT_KEYWORDS = [
-  'AI Engineer',
-  'Agentic',
-  'LLM',
-  'Generative AI',
-  'Artificial Intelligence',
-  'Machine Learning',
-];
-
 export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
-  const { session } = useAuth();
+  const { user, session } = useAuth();
+  const storageKey = getStorageKey(user?.id);
 
   const [selectedSources, setSelectedSources] = useState<string[]>([
     'dev.bg',
@@ -118,18 +51,18 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
     'hackernews',
   ]);
 
-  // Load initial keywords from localStorage or filters.yaml defaults
+  // Load keywords initially from cached local storage
   const [keywords, setKeywords] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem('jobfinder_v2_keywords_current');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {
       // ignore
     }
-    return DEFAULT_KEYWORDS;
+    return [];
   });
 
   const [newKeyword, setNewKeyword] = useState('');
@@ -155,36 +88,59 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
   const [isStarting, setIsStarting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Sync keywords to localStorage on every change
+  // Sync keywords to local storage cache for offline/instant resume
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(keywords));
+      localStorage.setItem(storageKey, JSON.stringify(keywords));
+      localStorage.setItem('jobfinder_v2_keywords_current', JSON.stringify(keywords));
     } catch {
       // ignore
     }
-  }, [keywords]);
+  }, [keywords, storageKey]);
 
-  // Load saved keywords from Supabase profile only if local storage has not been customized
+  // Load saved keywords from Supabase for this authenticated user profile
   useEffect(() => {
-    if (session?.access_token) {
-      apiGetSettings(session.access_token)
-        .then((settings) => {
-          const savedLocal = localStorage.getItem(STORAGE_KEY);
-          if (
-            !savedLocal &&
-            settings.search_keywords &&
-            Array.isArray(settings.search_keywords) &&
-            settings.search_keywords.length > 0
-          ) {
-            setKeywords(settings.search_keywords);
-            setBulkText(settings.search_keywords.join('\n'));
-          }
-        })
-        .catch((err) => {
-          console.warn('Could not load user settings keywords:', err);
-        });
+    if (!user) return;
+    const currentKey = getStorageKey(user.id);
+
+    // 1. Check user-specific localStorage first for instantaneous display
+    const cached = localStorage.getItem(currentKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          setKeywords(parsed);
+          setBulkText(parsed.join('\n'));
+        }
+      } catch {
+        // ignore
+      }
     }
-  }, [session]);
+
+    // 2. Fetch authoritative keywords from Supabase user_settings for this account
+    supabase
+      .from('user_settings')
+      .select('keywords')
+      .eq('user_id', user.id)
+      .limit(1)
+      .then(({ data, error }) => {
+        if (error) {
+          console.warn('Could not load user settings keywords from Supabase:', error.message);
+          return;
+        }
+        if (data && data[0] && Array.isArray(data[0].keywords)) {
+          const remoteKws = data[0].keywords;
+          setKeywords(remoteKws);
+          setBulkText(remoteKws.join('\n'));
+          try {
+            localStorage.setItem(currentKey, JSON.stringify(remoteKws));
+            localStorage.setItem('jobfinder_v2_keywords_current', JSON.stringify(remoteKws));
+          } catch {
+            // ignore
+          }
+        }
+      });
+  }, [user]);
 
   // Sync activeTaskId to localStorage so switching tabs doesn't interrupt or lose the logs
   useEffect(() => {
@@ -210,7 +166,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
         .map((k) => k.trim())
         .filter((k) => k.length > 0);
       const unique = Array.from(new Set(parsed));
-      setKeywords(unique.length > 0 ? unique : DEFAULT_KEYWORDS);
+      setKeywords(unique);
     }
     setEditorMode(mode);
   };
@@ -255,16 +211,19 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
     setBulkText(updated.join('\n'));
   };
 
-  const handleApplyPreset = (presetKeywords: string[], replace = false) => {
-    if (replace) {
-      setKeywords(presetKeywords);
-      setBulkText(presetKeywords.join('\n'));
-    } else {
-      setKeywords((prev) => {
-        const merged = Array.from(new Set([...prev, ...presetKeywords]));
-        setBulkText(merged.join('\n'));
-        return merged;
+  const saveKeywordsToDb = async (kws: string[]) => {
+    if (!user) return;
+    try {
+      await supabase.from('user_settings').upsert({
+        user_id: user.id,
+        keywords: kws,
+        updated_at: new Date().toISOString(),
       });
+      if (session?.access_token) {
+        apiUpdateSettings({ search_keywords: kws }, session.access_token).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Error saving keywords to Supabase:', e);
     }
   };
 
@@ -289,19 +248,16 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
     setKeywords(Array.from(new Set(parsed)));
   };
 
-  // Explicit save of keywords to Supabase profile
+  // Explicit save of keywords to Supabase user_settings
   const handleSaveKeywordsToProfile = async () => {
-    if (!session?.access_token) {
+    if (!user) {
       setErrorMsg('Моля, влезте в профила си, за да запазите ключовите думи в Supabase.');
       return;
     }
     setIsSavingKeywords(true);
     setErrorMsg(null);
     try {
-      await apiUpdateSettings(
-        { search_keywords: keywords },
-        session.access_token
-      );
+      await saveKeywordsToDb(keywords);
       setSaveKeywordsSuccess(true);
       setTimeout(() => setSaveKeywordsSuccess(false), 3000);
     } catch (err: unknown) {
@@ -312,19 +268,21 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
   };
 
   const handleStartSearch = async () => {
-    // If empty, fall back to default
-    const activeKeywords = keywords.length > 0 ? keywords : DEFAULT_KEYWORDS;
+    if (keywords.length === 0) {
+      setErrorMsg('Моля, въведете поне една ключова дума преди да стартирате търсенето.');
+      return;
+    }
     setIsStarting(true);
     setErrorMsg(null);
     try {
-      // Auto-save active keywords to user profile in Supabase in background
-      if (session?.access_token) {
-        apiUpdateSettings({ search_keywords: activeKeywords }, session.access_token).catch(() => {});
+      // Auto-save user's custom keywords to Supabase in background
+      if (user) {
+        saveKeywordsToDb(keywords).catch(() => {});
       }
       const res = await apiStartSearch(
         {
           sources: selectedSources,
-          keywords: activeKeywords,
+          keywords: keywords,
           max_jobs: maxJobs,
           clear_new: clearNew,
         },
@@ -443,7 +401,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
           </div>
         </div>
 
-        {/* Keywords Section with Presets & Dual Editor Mode */}
+        {/* Keywords Section - Fully Personalized & Saved to Supabase */}
         <div className="space-y-4 pt-4 border-t border-slate-800/80">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div>
@@ -452,12 +410,9 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-200">
                   Ключови Думи за Търсене ({keywords.length})
                 </label>
-                <span className="px-2 py-0.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-[10px] text-teal-400 font-mono">
-                  filters.yaml
-                </span>
               </div>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Изберете готов пакет от филтри, пейстнете цял списък или редактирайте като текст
+                Въведете вашите персонализирани ключови думи (чрез тагове или текстов списък). Записват се във вашия Supabase профил.
               </p>
             </div>
 
@@ -536,42 +491,6 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
             </div>
           </div>
 
-          {/* Quick Presets Bar (filters.yaml & Agentic Stack) */}
-          <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-2">
-            <div className="flex items-center justify-between text-[11px] text-slate-400">
-              <span className="font-semibold text-slate-300 flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-teal-400" />
-                <span>Бързи пакети от filters.yaml:</span>
-              </span>
-              <span>Кликнете за добавяне към списъка</span>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {KEYWORD_PRESETS.map((preset) => {
-                const allIncluded = preset.keywords.every((k) => keywords.includes(k));
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => handleApplyPreset(preset.keywords, false)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 transition ${
-                      allIncluded
-                        ? 'bg-teal-500/15 border-teal-500/40 text-teal-300 shadow-sm'
-                        : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-teal-500/40 hover:text-white'
-                    }`}
-                    title={preset.desc}
-                  >
-                    <span>{preset.name}</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800/80 font-mono text-slate-400">
-                      +{preset.keywords.length}
-                    </span>
-                    {allIncluded && <Check className="w-3 h-3 text-teal-400" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* Active Editor (Tags or Textarea) */}
           {editorMode === 'tags' ? (
             <div className="space-y-2">
@@ -592,6 +511,12 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs }) => {
                     </button>
                   </span>
                 ))}
+
+                {keywords.length === 0 && (
+                  <span className="text-xs text-slate-500 italic px-1 select-none">
+                    Няма въведени ключови думи.
+                  </span>
+                )}
 
                 <div className="flex items-center gap-1.5 flex-1 min-w-[220px]">
                   <input
