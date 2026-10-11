@@ -2,9 +2,10 @@
 """
 Job Finder & Market Intelligence CLI Entrypoint.
 Usage:
+  python run.py --api          # Стартира Job-Finder v2 FastAPI REST бекенда (порт 8000)
   python run.py --search       # Търси нови обяви, анализира с Gemini и известява
   python run.py --login        # Отваря видим браузър за ръчен вход в LinkedIn и jobs.bg
-  python run.py --dashboard    # Стартира интерактивния локален Streamlit дашборд
+  python run.py --dashboard    # Стартира наследения (legacy) Streamlit дашборд (или --legacy)
   python run.py --insights     # Генерира пазарен доклад за търсените AI умения в София
   python run.py --stats        # Показва статистика за събраните обяви в конзолата
 """
@@ -74,10 +75,23 @@ def cmd_login():
     bm.open_interactive_login()
 
 
+def cmd_api():
+    """Стартира новия FastAPI REST бекенд сървър (v2)."""
+    console.print(Panel.fit("[bold green]🚀 Стартиране на Job-Finder v2 FastAPI API сървър на http://127.0.0.1:8000 ...[/bold green]\n[cyan]Swagger документация: http://127.0.0.1:8000/docs[/cyan]"))
+    cmd = [sys.executable, "-m", "uvicorn", "src.api.main:app", "--reload", "--host", "127.0.0.1", "--port", "8000"]
+    try:
+        subprocess.run(cmd)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]API сървърът е спрян.[/yellow]")
+
+
 def cmd_dashboard():
-    """Стартира локалния Streamlit дашборд."""
-    console.print(Panel.fit("[bold cyan]🚀 Стартиране на локалния дашборд в браузъра...[/bold cyan]"))
-    cmd = [sys.executable, "-m", "streamlit", "run", "src/dashboard/app.py", "--server.headless=false"]
+    """Стартира наследения (legacy) Streamlit дашборд."""
+    console.print(Panel.fit("[bold cyan]🚀 Стартиране на наследения Streamlit дашборд (v1)...[/bold cyan]"))
+    legacy_path = Path("legacy/streamlit_app.py")
+    if not legacy_path.exists():
+        legacy_path = Path("src/dashboard/app.py")
+    cmd = [sys.executable, "-m", "streamlit", "run", str(legacy_path), "--server.headless=false"]
     try:
         subprocess.run(cmd)
     except KeyboardInterrupt:
@@ -406,9 +420,10 @@ def cmd_cleanup():
 
 def main():
     parser = argparse.ArgumentParser(description="Job Finder & Market Intelligence CLI")
+    parser.add_argument("--api", action="store_true", help="Стартира Job-Finder v2 FastAPI REST бекенда (порт 8000)")
     parser.add_argument("--search", action="store_true", help="Стартира търсенето за нови обяви")
     parser.add_argument("--login", action="store_true", help="Отваря браузър за ръчен вход в LinkedIn и jobs.bg")
-    parser.add_argument("--dashboard", action="store_true", help="Стартира Streamlit визуалния дашборд")
+    parser.add_argument("--dashboard", "--legacy", dest="dashboard", action="store_true", help="Стартира наследения Streamlit дашборд (v1)")
     parser.add_argument("--insights", action="store_true", help="Генерира пазарен доклад за Agentic AI в София")
     parser.add_argument("--stats", action="store_true", help="Показва статистика за базата данни")
     parser.add_argument("--reanalyze", action="store_true", help="Пуска бълк Gemini анализ за обявите в базата")
@@ -424,7 +439,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.login:
+    if args.api:
+        cmd_api()
+    elif args.login:
         cmd_login()
     elif args.dashboard:
         cmd_dashboard()
