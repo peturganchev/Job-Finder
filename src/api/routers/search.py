@@ -192,21 +192,41 @@ def execute_search_job(
                         )
 
                 if len(found) == 0:
-                    _update_task(
-                        task_id,
-                        log_msg=f"   ℹ️ {scraper.name}: 0 нови позиции (проверете филтрите или е засечена бот-защита).",
-                        user_id=user_id
-                    )
+                    last_err = getattr(scraper, "last_error", None)
+                    if last_err:
+                        _update_task(
+                            task_id,
+                            log_msg=f"   ⚠️ {scraper.name}: 0 нови позиции. {last_err}.",
+                            user_id=user_id
+                        )
+                        if "DataDome" in last_err or "Cloudflare" in last_err or "Datacenter" in last_err:
+                            _update_task(
+                                task_id,
+                                log_msg=f"   💡 {scraper.name}: Защитата блокира облачни хостинги (Render). Стартирайте локалния уъркър ('python run.py --search') от домашния си компютър – той синхронизира автоматично с Supabase!",
+                                user_id=user_id
+                            )
+                    else:
+                        _update_task(
+                            task_id,
+                            log_msg=f"   ℹ️ {scraper.name}: 0 нови позиции (няма намерени резултати за зададените филтри).",
+                            user_id=user_id
+                        )
                 elif scraper_added == 0 and scraper_skipped > 0:
                     _update_task(
                         task_id,
-                        log_msg=f"   ℹ️ {scraper.name}: Всички {scraper_skipped} намерени позиции вече са в каталога ви.",
+                        log_msg=f"   ℹ️ {scraper.name}: Всички {scraper_skipped} намерени позиции вече са в каталога ви (пропуснати като дубликати).",
                         user_id=user_id
                     )
                 elif scraper_skipped > 0:
                     _update_task(
                         task_id,
-                        log_msg=f"   ℹ️ {scraper.name}: {scraper_added} нови добавени ({scraper_skipped} съществуващи пропуснати).",
+                        log_msg=f"   ✅ {scraper.name}: {scraper_added} нови добавени ({scraper_skipped} съществуващи пропуснати).",
+                        user_id=user_id
+                    )
+                else:
+                    _update_task(
+                        task_id,
+                        log_msg=f"   ✅ {scraper.name}: {scraper_added} нови позиции успешно добавени.",
                         user_id=user_id
                     )
 

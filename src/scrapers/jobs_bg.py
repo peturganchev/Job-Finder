@@ -21,31 +21,61 @@ class JobsBgScraper(BaseScraper):
             "Accept-Language": "bg,en-US;q=0.9,en;q=0.8"
         }
         self.client = httpx.Client(headers=self.headers, follow_redirects=True, timeout=15.0)
+        self.last_error = None
 
-    def _wait_for_cloudflare(self, timeout_sec: int = 10) -> bool:
-        """Проверява и изчаква автоматичното преминаване на Cloudflare верификацията."""
+    def _wait_for_challenge(self, timeout_sec: int = 8) -> bool:
+        """Проверява дали страницата се зарежда нормално или има активна Cloudflare/DataDome защита."""
         if not self.page:
             return True
         start = time.time()
         while time.time() - start < timeout_sec:
             try:
-                title = self.page.title()
-                content = self.page.content()
-                if "Just a moment" not in title and "Cloudflare" not in title and "captcha-delivery" not in content:
+                # 1. Ако вече виждаме линкове към обяви, сме преминали успешно!
+                if self.page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
                     return True
-                print("🛡️ [jobs.bg] Засечена Cloudflare / DataDome проверка, изчакване...")
-                # Опит за клик на Turnstile чекбокс ако има такъв
+
+                title = (self.page.title() or "").strip()
+                content = self.page.content()
+
+                is_cf = "Just a moment" in title or "Cloudflare" in title
+                is_dd_blocked = (
+                    "Please enable JS" in content
+                    or self.page.query_selector("iframe[src*='captcha-delivery']") is not None
+                    or self.page.query_selector("iframe[src*='geo.captcha-delivery']") is not None
+                )
+
+                if is_cf:
+                    self.last_error = "Засечена Cloudflare Turnstile проверка"
+                elif is_dd_blocked:
+                    self.last_error = "Засечена DataDome CAPTCHA защита (HTTP 403 от Cloud Datacenter IP)"
+                else:
+                    # Страницата не показва блок екран (може още да рендерира или да е празен списък)
+                    if "jobs.bg" in title.lower() or "обяви" in title.lower():
+                        return True
+
+                # Опит за клик на евентуален Turnstile чекбокс
                 for sel in ["iframe[src*='cloudflare']", "iframe[src*='turnstile']", "input[type='checkbox']"]:
                     elem = self.page.query_selector(sel)
                     if elem:
                         box = elem.bounding_box()
                         if box:
                             self.page.mouse.click(box["x"] + 25, box["y"] + 25)
-                            time.sleep(1.5)
+                            time.sleep(1.0)
             except Exception:
                 pass
-            time.sleep(2)
+            time.sleep(1.5)
+
+        # Финална проверка за обяви
+        try:
+            if self.page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
+                return True
+        except Exception:
+            pass
+
         return False
+
+    def _wait_for_cloudflare(self, timeout_sec: int = 8) -> bool:
+        return self._wait_for_challenge(timeout_sec=timeout_sec)
 
     def search(self, keywords: List[str], max_jobs: int = 25) -> List[Job]:
         """
@@ -53,6 +83,7 @@ class JobsBgScraper(BaseScraper):
         """
         found_jobs: List[Job] = []
         seen_urls = set()
+        self.last_error = None
 
         for kw in keywords:
             if len(found_jobs) >= max_jobs:
@@ -65,9 +96,11 @@ class JobsBgScraper(BaseScraper):
                 print(f"🔍 [jobs.bg] Търсене за '{kw}': {search_url}")
                 if self.page:
                     self.page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
-                    cf_ok = self._wait_for_cloudflare(timeout_sec=8)
+                    cf_ok = self._wait_for_challenge(timeout_sec=8)
                     if not cf_ok:
-                        print(f"🛡️ [jobs.bg] Засечена е активна защита при '{kw}'. Прекъсване на jobs.bg за предпазване от блокиране.")
+                        if not self.last_error:
+                            self.last_error = "Засечена активна защита (Cloudflare / DataDome)"
+                        print(f"🛡️ [jobs.bg] {self.last_error} при '{kw}'. Прекъсване за предпазване от блокиране.")
                         break
                     time.sleep(random.uniform(1.0, 2.0))
                     for _ in range(2):
@@ -76,8 +109,13 @@ class JobsBgScraper(BaseScraper):
                     html = self.page.content()
                 else:
                     resp = self.client.get(search_url)
-                    if resp.status_code != 200 or "Just a moment" in resp.text:
-                        print("ℹ️ [jobs.bg] Изисква браузър за преминаване на проверката.")
+                    if resp.status_code == 403 or "Please enable JS" in resp.text:
+                        self.last_error = "Засечена DataDome защита (HTTP 403 от Cloud Datacenter IP)"
+                        print(f"🛡️ [jobs.bg] {self.last_error}")
+                        break
+                    elif resp.status_code != 200 or "Just a moment" in resp.text:
+                        self.last_error = f"Засечена Cloudflare защита (Статус {resp.status_code})"
+                        print(f"🛡️ [jobs.bg] {self.last_error}")
                         break
                     html = resp.text
                 soup = BeautifulSoup(html, "html.parser")
@@ -172,8 +210,9 @@ class JobsBgScraper(BaseScraper):
         try:
             if self.page:
                 self.page.goto(job_url, wait_until="domcontentloaded", timeout=20000)
-                self._wait_for_cloudflare()
-                time.sleep(random.uniform(1.0, 2.0))
+                if not self._wait_for_challenge(timeout_sec=5):
+                    return {"description": "", "posted_date": None, "salary": None}
+                time.sleep(random.uniform(0.5, 1.2))
                 html = self.page.content()
             else:
                 resp = self.client.get(job_url)
