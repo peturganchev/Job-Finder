@@ -15,10 +15,11 @@ from src.api.schemas import (
     CoverLetterResponse,
     InboundEmailRequest,
     InboundEmailResponse,
+    BackfillBatchRequest,
 )
 from src.api.dependencies import get_repo, get_analyzer, get_current_user_optional
 from src.database.models import ApplicationStatus
-from src.scrapers.email_digest_parser import JobsBgEmailParser, batch_categorize_jobs
+from src.scrapers.email_digest_parser import JobsBgEmailParser, batch_categorize_jobs, classify_job_rule_based
 
 router = APIRouter()
 
@@ -315,4 +316,29 @@ def ingest_jobs_bg_email(
             for j in classified_jobs[:5]
         ]
     )
+
+
+@router.post("/backfill-batch", response_model=StandardMessageResponse, summary="Ingest batch of jobs into jobs_bg (Zero AI tokens)")
+def backfill_jobs_batch(
+    request: BackfillBatchRequest,
+    repo = Depends(get_repo),
+):
+    """
+    Directly ingests a batch of raw jobs (from browser console, userscript, or local worker)
+    into public.jobs_bg using zero-token NLP classification.
+    """
+    if not request.jobs:
+        return StandardMessageResponse(success=True, message="No jobs provided.", data={"saved_count": 0})
+
+    for j in request.jobs:
+        if not j.get("category"):
+            j["category"] = classify_job_rule_based(j.get("title", ""), j.get("description", ""), j.get("skills"))
+
+    saved = repo.upsert_jobs_bg(request.jobs)
+    return StandardMessageResponse(
+        success=True,
+        message=f"Successfully upserted {saved} positions into jobs_bg catalog.",
+        data={"saved_count": saved}
+    )
+
 

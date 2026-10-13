@@ -216,3 +216,8 @@ class InboundEmailResponse(BaseModel):
     sample_jobs: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class BackfillBatchRequest(BaseModel):
+    jobs: List[Dict[str, Any]] = Field(..., description="List of raw job objects extracted from Jobs.bg")
+
+
+

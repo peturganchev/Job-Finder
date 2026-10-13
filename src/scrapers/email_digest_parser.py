@@ -223,3 +223,100 @@ def batch_categorize_jobs(jobs: List[Dict[str, Any]], gemini_api_key: Optional[s
                 j["category"] = "IT - Software Development"
 
     return jobs
+
+
+def classify_job_rule_based(title: str, text: str = "", skills: Optional[List[str]] = None) -> str:
+    """
+    Zero-token deterministic classifier for Jobs.bg positions.
+    Accurately categorizes positions across 12 distinct industries based on title and keywords.
+    Does not consume any Google AI Studio API quota.
+    """
+    skills_text = " ".join(skills or [])
+    combined = f"{title} {text} {skills_text}".lower()
+
+    # 1. AI & Machine Learning
+    if any(k in combined for k in [
+        "ai engineer", "machine learning", "deep learning", "llm", "data scientist", 
+        "nlp", "computer vision", "generative ai", "prompt engineer", "artificial intelligence",
+        "mlops", "pytorch", "tensorflow"
+    ]):
+        return "IT - AI & Machine Learning"
+
+    # 2. DevOps & Cloud
+    if any(k in combined for k in [
+        "devops", "cloud engineer", "kubernetes", "docker", "aws", "azure", "gcp", 
+        "site reliability", "sre", "terraform", "infrastructure", "ansible", "ci/cd"
+    ]):
+        return "IT - DevOps & Cloud"
+
+    # 3. QA & Testing
+    if any(k in combined for k in [
+        "qa", "quality assurance", "test engineer", "automation qa", "selenium", 
+        "cypress", "tester", "софтуерен тестер"
+    ]):
+        return "IT - QA & Testing"
+
+    # 4. Software Development
+    if any(k in combined for k in [
+        "developer", "software engineer", "frontend", "backend", "fullstack", "full stack", 
+        "python", "java", "c#", ".net", "javascript", "typescript", "react", "angular", 
+        "vue", "golang", "php", "c++", "ios", "android", "mobile developer", "програмист"
+    ]):
+        return "IT - Software Development"
+
+    # 5. SysAdmin & Technical Support
+    if any(k in combined for k in [
+        "helpdesk", "help desk", "system administrator", "системен администратор", 
+        "поддръжка", "it support", "network engineer", "технически сътрудник", "service desk"
+    ]):
+        return "IT - System Administration & Support"
+
+    # 6. Finance & Accounting
+    if any(k in combined for k in [
+        "счетоводител", "счетоводство", "финанс", "accountant", "payroll", "одитор", 
+        "audit", "фактуриране", "банкер", "кредитен", "трз"
+    ]):
+        return "Finance & Accounting"
+
+    # 7. Sales & Marketing
+    if any(k in combined for k in [
+        "sales", "marketing", "търговски", "търговец", "продажби", "account manager", 
+        "маркетинг", "seo", "social media", "business development", "консултант продажби"
+    ]):
+        return "Sales & Marketing"
+
+    # 8. Human Resources
+    if any(k in combined for k in [
+        "hr", "human resources", "recruiter", "подбор", "специалист подбор", "talent acquisition"
+    ]):
+        return "Human Resources & Recruiting"
+
+    # 9. Management & Operations
+    if any(k in combined for k in [
+        "project manager", "product manager", "scrum master", "директор", "управител", 
+        "оператор въвеждане", "operations", "мениджър", "ръководител", "team lead"
+    ]):
+        return "Management & Operations"
+
+    # 10. Logistics & Transport
+    if any(k in combined for k in [
+        "шофьор", "логистика", "склад", "складов", "спедитор", "куриер", "доставчик", "мотокарист"
+    ]):
+        return "Logistics & Transport"
+
+    # 11. Engineering & Technical
+    if any(k in combined for k in [
+        "инженер", "електроинженер", "механик", "техник", "cnc", "стругар", 
+        "електротехник", "заварчик", "конструктор"
+    ]):
+        return "Engineering & Technical"
+
+    # 12. Customer Service & Hospitality
+    if any(k in combined for k in [
+        "хост", "хостеса", "сервитьор", "барман", "клиентско", "call center", 
+        "рецепционист", "касиер", "продавач"
+    ]):
+        return "Customer Service & Hospitality"
+
+    return "Other"
+
