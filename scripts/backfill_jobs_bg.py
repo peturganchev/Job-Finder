@@ -1,7 +1,7 @@
 """
-Safe Local Backfill Script for Jobs.bg (Multi-industry).
-Automates the local Brave/Chromium browser via Playwright with anti-ban humanized delays,
-checkpointing, and direct upsert into Supabase `jobs_bg` catalog.
+Safe Continuous Backfill Script for Jobs.bg.
+Opens browser visibly, alerts user via Windows Desktop Toast Notification on any challenge,
+auto-detects when challenge is solved, and autonomously extracts and upserts jobs into Supabase.
 """
 import os
 import sys
@@ -16,11 +16,15 @@ from dotenv import load_dotenv
 # Ensure root directory is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 from src.database.repository import get_repository
 from src.browser import BrowserManager
 from src.scrapers.email_digest_parser import classify_job_rule_based
+from src.utils.desktop_notifier import notify_desktop
 
 CHECKPOINT_FILE = os.path.join("data", "jobs_bg_backfill_checkpoint.json")
 
@@ -41,37 +45,84 @@ def save_checkpoint(last_page: int, total_saved: int, processed_urls: list):
         json.dump({
             "last_page": last_page,
             "total_saved": total_saved,
-            "processed_urls": processed_urls[-5000:],  # keep last 5000 in checkpoint
+            "processed_urls": processed_urls[-10000:],
             "updated_at": datetime.now().isoformat()
         }, f, indent=2, ensure_ascii=False)
 
 
-def wait_for_challenge(page, timeout_sec: int = 8) -> bool:
-    """Проверява дали страницата зарежда нормално или има Cloudflare Turnstile / DataDome."""
-    start = time.time()
-    while time.time() - start < timeout_sec:
+def handle_challenge_if_needed(page, max_wait_sec: int = 90) -> bool:
+    """
+    Проверява дали има активна Cloudflare или DataDome защита.
+    Ако има:
+      - Изпраща Windows Toast десктоп нотификация и звуков сигнал.
+      - Показва прозореца на преден план.
+      - Изчаква потребителя да плъзне слайдера/реши капчата.
+      - Автоматично засича отключването и продължава без натискане на клавиш.
+    """
+    time.sleep(1.5)
+    
+    # 1. Вече заредени обяви ли са?
+    if page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
+        return True
+
+    title = (page.title() or "").strip()
+    content = page.content()
+
+    is_cf = "Just a moment" in title or "Cloudflare" in title
+    is_dd = (
+        "captcha-delivery" in content
+        or "var dd={'rt':'c'" in content
+        or page.query_selector("iframe[src*='captcha-delivery']") is not None
+    )
+
+    if not is_cf and not is_dd:
+        # Може просто страницата да зарежда
+        time.sleep(2.0)
+        if page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
+            return True
+
+    print("\n" + "=" * 60)
+    print("🔔 [ВНИМАНИЕ] Засечена проверка за робот (Cloudflare / DataDome)!")
+    print("👉 Изпращам нотификация на десктопа. Моля погледни браузъра и плъзни слайдера.")
+    print("=" * 60 + "\n")
+
+    # Десктоп нотификация
+    notify_desktop(
+        "Job-Finder: Валидация на Jobs.bg",
+        "Моля плъзнете слайдера в отворения браузър за достъп до Jobs.bg!"
+    )
+
+    try:
+        page.bring_to_front()
+    except Exception:
+        pass
+
+    start_wait = time.time()
+    last_beep = 0
+    while time.time() - start_wait < max_wait_sec:
+        time.sleep(1.2)
         try:
-            if page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
-                return True
-            title = (page.title() or "").strip()
-            # Click Turnstile checkbox if present
+            # Опит за клик на Turnstile чекбокс ако има такъв
             for sel in ["iframe[src*='cloudflare']", "iframe[src*='turnstile']", "input[type='checkbox']"]:
                 elem = page.query_selector(sel)
                 if elem:
                     box = elem.bounding_box()
                     if box:
                         page.mouse.click(box["x"] + 25, box["y"] + 25)
-                        time.sleep(1.0)
-            if ("jobs.bg" in title.lower() or "обяви" in title.lower()) and "just a moment" not in title.lower():
-                if page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
-                    return True
+                        time.sleep(0.5)
+
+            # Проверка дали обявите се появиха
+            if page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
+                print("🎉 [УСПЕХ] Проверката е премината! Автоматично продължаване на извличането...")
+                return True
         except Exception:
             pass
-        time.sleep(1.2)
-    return page.query_selector("a[href*='/job/'], a[href*='view_job.php']") is not None
+
+    print("⚠️ Изтече времето за изчакване на валидация.")
+    return False
 
 
-def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float = 4.5, resume: bool = True, headless: bool = False):
+def run_backfill(max_pages: int = 30, delay_min: float = 2.0, delay_max: float = 4.0, resume: bool = True):
     load_dotenv()
     repo = get_repository()
     checkpoint = load_checkpoint() if resume else {"last_page": 0, "total_saved": 0, "processed_urls": []}
@@ -79,12 +130,12 @@ def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float =
     total_saved = checkpoint.get("total_saved", 0)
     seen_urls = set(checkpoint.get("processed_urls", []))
 
-    print(f"🚀 [Jobs.bg Backfill] Стартиране от страница {start_page} (До момента запазени: {total_saved})")
+    print(f"🚀 [Jobs.bg Backfill] Стартиране от страница {start_page} (Досега събрани: {total_saved})")
 
-    # Launch local persistent browser
-    browser_mgr = BrowserManager(headless=headless)
+    # Пускаме видим браузър за потребителя
+    browser_mgr = BrowserManager(headless=False)
     try:
-        _pw, _ctx, page = browser_mgr.launch_session(headless=headless)
+        _pw, _ctx, page = browser_mgr.launch_session(headless=False)
     except Exception as e:
         print(f"⚠️ Грешка при стартиране на браузъра: {e}")
         return
@@ -94,26 +145,29 @@ def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float =
         end_page = start_page + max_pages - 1
 
         while current_page <= end_page:
-            # Jobs.bg pagination: front_job_search.php?from_page=0, from_page=15, from_page=30...
             from_offset = (current_page - 1) * 15
             target_url = f"https://www.jobs.bg/front_job_search.php?from_page={from_offset}"
-            print(f"\n📄 [Страница {current_page}] Зареждане: {target_url}")
+            print(f"\n📄 [Страница {current_page}/{end_page}] Зареждане: {target_url}")
 
             try:
                 page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
-                wait_for_challenge(page, timeout_sec=8)
-                # Humanized jitter delay
-                time.sleep(random.uniform(delay_min, delay_max))
+                
+                # Проверка и нотификация при нужда
+                is_ready = handle_challenge_if_needed(page, max_wait_sec=90)
+                if not is_ready:
+                    print(f"🛑 Спиране на бекфила на страница {current_page} поради липса на валидация.")
+                    break
 
-                # Smooth scroll to trigger lazy loading
-                for _ in range(3):
-                    page.mouse.wheel(0, 350)
-                    time.sleep(random.uniform(0.3, 0.6))
+                # Плавни човешки движения
+                time.sleep(random.uniform(delay_min, delay_max))
+                for _ in range(2):
+                    page.mouse.wheel(0, random.randint(300, 600))
+                    time.sleep(random.uniform(0.4, 0.8))
 
                 html = page.content()
                 soup = BeautifulSoup(html, "html.parser")
 
-                # Parse job items
+                # Извличане на линкове
                 job_links = soup.select("a[href*='/job/'], a[href*='view_job.php']")
                 page_jobs = []
 
@@ -128,11 +182,16 @@ def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float =
                         continue
                     seen_urls.add(href)
 
-                    title = link.get_text(strip=True)
-                    if not title or len(title) < 3:
+                    raw_title = link.get_text(strip=True)
+                    if not raw_title or len(raw_title) < 3:
                         continue
 
-                    # Find job card container
+                    # Премахване на икони и декорации
+                    import re
+                    clean_title = re.sub(r'^(?:star)+', '', raw_title).strip()
+                    title = clean_title if len(clean_title) >= 3 else raw_title
+
+                    # Контейнер на обявата
                     card = link.find_parent("td") or link.find_parent("div") or link.parent
                     company = "Работодател"
                     comp_elem = card.select_one("a[href*='company/']") if card else None
@@ -141,19 +200,15 @@ def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float =
 
                     location = "България"
                     loc_text = card.get_text(" ", strip=True) if card else ""
-                    if "София" in loc_text:
-                        location = "София"
-                    elif "Пловдив" in loc_text:
-                        location = "Пловдив"
-                    elif "Варна" in loc_text:
-                        location = "Варна"
-                    elif "Бургас" in loc_text:
-                        location = "Бургас"
+                    for city in ["София", "Пловдив", "Варна", "Бургас", "Русе", "Стара Загора"]:
+                        if city in loc_text:
+                            location = city
+                            break
 
-                    if "home office" in loc_text.lower() or "remote" in loc_text.lower() or "от вкъщи" in loc_text.lower():
+                    if any(r in loc_text.lower() for r in ["home office", "remote", "дистанционно", "от вкъщи"]):
                         location += " (Remote / Хибридно)"
 
-                    job_id = href.split("/")[-1]
+                    job_id = href.rstrip("/").split("/")[-1]
 
                     page_jobs.append({
                         "job_id": job_id,
@@ -169,49 +224,51 @@ def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float =
                     })
 
                 if not page_jobs:
-                    print(f"   ℹ️ Няма намерени нови обяви на страница {current_page} (възможен край на списъка).")
-                    break
+                    print(f"   ℹ️ Няма намерени нови обяви на страница {current_page}.")
+                    # Възможно е страницата да е празна или край на резултатите
+                    current_page += 1
+                    continue
 
-                # Zero-token classification (0 Google AI Studio tokens consumed!)
+                # 0 токена: NLP класификация
                 for j in page_jobs:
                     j["category"] = classify_job_rule_based(j["title"], j["description"])
 
-                # Upsert into Supabase jobs_bg
+                # Upsert в Supabase
                 saved = repo.upsert_jobs_bg(page_jobs)
                 total_saved += saved
-                print(f"   ✅ Страница {current_page}: Записани {saved} нови позиции в Supabase (Общо: {total_saved})")
+                print(f"   ✅ Страница {current_page}: Записани {saved} нови позиции в Supabase (Общо в каталога: {total_saved})")
 
                 save_checkpoint(current_page, total_saved, list(seen_urls))
                 current_page += 1
 
-                # Safe cooldown between pages
+                # Случайно забавяне между страниците
                 cooldown = random.uniform(delay_min, delay_max)
                 time.sleep(cooldown)
 
             except Exception as page_err:
-                print(f"⚠️ Грешка при обработка на страница {current_page}: {page_err}")
-                time.sleep(5.0)
+                print(f"⚠️ Грешка при страница {current_page}: {page_err}")
+                time.sleep(4.0)
                 current_page += 1
 
     finally:
         browser_mgr.close()
-        print(f"\n🎉 [Jobs.bg Backfill Завършен] Общо записани позиции: {total_saved}")
+        print("\n" + "=" * 60)
+        print(f"🎉 [Бекфилът завърши/паузиран] Общо позиции в Supabase: {total_saved}")
         print(f"📁 Чекпойнт съхранен в: {CHECKPOINT_FILE}")
+        print("=" * 60)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Jobs.bg Multi-Industry Safe Backfill")
-    parser.add_argument("--pages", type=int, default=10, help="Брой страници за скрейпване (по 15 обяви на страница)")
-    parser.add_argument("--min-delay", type=float, default=2.0, help="Минимално закъснение в секунди между страници")
-    parser.add_argument("--max-delay", type=float, default=4.5, help="Максимално закъснение в секунди между страници")
+    parser = argparse.ArgumentParser(description="Jobs.bg Multi-Industry Continuous Backfill")
+    parser.add_argument("--pages", type=int, default=20, help="Брой страници за скрейпване")
+    parser.add_argument("--min-delay", type=float, default=2.0, help="Минимално закъснение в секунди")
+    parser.add_argument("--max-delay", type=float, default=4.0, help="Максимално закъснение в секунди")
     parser.add_argument("--no-resume", action="store_true", help="Започване отначало без чекпойнт")
-    parser.add_argument("--headless", action="store_true", help="Пуска в скрит режим")
 
     args = parser.parse_args()
     run_backfill(
         max_pages=args.pages,
         delay_min=args.min_delay,
         delay_max=args.max_delay,
-        resume=not args.no_resume,
-        headless=args.headless
+        resume=not args.no_resume
     )
