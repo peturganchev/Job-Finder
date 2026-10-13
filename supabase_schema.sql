@@ -222,3 +222,48 @@ CREATE POLICY "Allow authenticated read access_requests"
     ON public.access_requests FOR SELECT
     TO authenticated
     USING (true);
+
+-- ==============================================================================
+-- 9. Глобален каталог 'jobs_bg' (Jobs.bg Master Pool & Categories)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.jobs_bg (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    job_id TEXT,
+    url TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    company TEXT NOT NULL,
+    location TEXT,
+    salary TEXT,
+    description TEXT,
+    skills JSONB DEFAULT '[]'::jsonb,
+    category TEXT,
+    posted_date TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    last_seen_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_bg_url ON public.jobs_bg(url);
+CREATE INDEX IF NOT EXISTS idx_jobs_bg_active ON public.jobs_bg(is_active);
+CREATE INDEX IF NOT EXISTS idx_jobs_bg_category ON public.jobs_bg(category);
+CREATE INDEX IF NOT EXISTS idx_jobs_bg_created_at ON public.jobs_bg(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_jobs_bg_skills ON public.jobs_bg USING GIN(skills);
+
+ALTER TABLE public.jobs_bg ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read on jobs_bg" ON public.jobs_bg;
+CREATE POLICY "Allow public read on jobs_bg" 
+ON public.jobs_bg FOR SELECT 
+USING (true);
+
+DROP POLICY IF EXISTS "Allow authenticated insert on jobs_bg" ON public.jobs_bg;
+CREATE POLICY "Allow authenticated insert on jobs_bg" 
+ON public.jobs_bg FOR INSERT 
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow authenticated update on jobs_bg" ON public.jobs_bg;
+CREATE POLICY "Allow authenticated update on jobs_bg" 
+ON public.jobs_bg FOR UPDATE 
+USING (true);
+

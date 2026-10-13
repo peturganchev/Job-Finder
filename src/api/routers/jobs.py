@@ -13,9 +13,12 @@ from src.api.schemas import (
     StandardMessageResponse,
     CoverLetterRequest,
     CoverLetterResponse,
+    InboundEmailRequest,
+    InboundEmailResponse,
 )
 from src.api.dependencies import get_repo, get_analyzer, get_current_user_optional
 from src.database.models import ApplicationStatus
+from src.scrapers.email_digest_parser import JobsBgEmailParser, batch_categorize_jobs
 
 router = APIRouter()
 
@@ -269,3 +272,47 @@ def import_catalog_jobs(
         message="Local repository does not require catalog import.",
         data={"imported_count": 0}
     )
+
+
+@router.post("/inbound-email", response_model=InboundEmailResponse, summary="Ingest Jobs.bg daily digest from email")
+def ingest_jobs_bg_email(
+    request: InboundEmailRequest,
+    repo = Depends(get_repo),
+):
+    """
+    Webhook receiving email digest content from Jobs.bg.
+    Parses job listings, classifies them using dedicated Gemini AI key,
+    and inserts into the master public.jobs_bg database.
+    """
+    fmt = (request.format or "text").lower()
+    if fmt == "html" or "<html" in request.content.lower():
+        parsed_jobs = JobsBgEmailParser.parse_html(request.content)
+    else:
+        parsed_jobs = JobsBgEmailParser.parse_markdown_or_text(request.content)
+
+    if not parsed_jobs:
+        return InboundEmailResponse(
+            success=False,
+            parsed_count=0,
+            saved_count=0,
+            message="No job listings found in the provided email content.",
+            sample_jobs=[]
+        )
+
+    # Classify with dedicated Gemini key
+    classified_jobs = batch_categorize_jobs(parsed_jobs)
+
+    # Upsert to jobs_bg catalog
+    saved = repo.upsert_jobs_bg(classified_jobs)
+
+    return InboundEmailResponse(
+        success=True,
+        parsed_count=len(parsed_jobs),
+        saved_count=saved,
+        message=f"Successfully parsed {len(parsed_jobs)} jobs and upserted {saved} into jobs_bg.",
+        sample_jobs=[
+            {"title": j["title"], "company": j["company"], "category": j.get("category"), "url": j["url"]}
+            for j in classified_jobs[:5]
+        ]
+    )
+

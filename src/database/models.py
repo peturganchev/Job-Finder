@@ -55,3 +55,23 @@ class Job(BaseModel):
 
     class Config:
         use_enum_values = True
+
+
+class JobsBgRecord(BaseModel):
+    """Модел за глобалния каталог на Jobs.bg (public.jobs_bg)."""
+    id: Optional[Union[int, str]] = None
+    job_id: Optional[str] = None
+    url: str
+    title: str
+    company: str
+    location: Optional[str] = None
+    salary: Optional[str] = None
+    description: Optional[str] = None
+    skills: List[str] = Field(default_factory=list)
+    category: Optional[str] = None
+    posted_date: Optional[str] = None
+    is_active: bool = True
+    last_seen_at: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+

@@ -202,3 +202,17 @@ class GeminiVerifyResponse(BaseModel):
     models: List[str] = Field(default_factory=list)
     message: str
 
+
+class InboundEmailRequest(BaseModel):
+    content: str = Field(..., description="Raw text, markdown, or HTML from the Jobs.bg email digest")
+    format: Optional[str] = Field("text", description="Format: 'text', 'markdown', or 'html'")
+
+
+class InboundEmailResponse(BaseModel):
+    success: bool
+    parsed_count: int
+    saved_count: int
+    message: str
+    sample_jobs: List[Dict[str, Any]] = Field(default_factory=list)
+
+
