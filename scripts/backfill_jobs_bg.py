@@ -15,6 +15,8 @@ from dotenv import load_dotenv
 
 # Ensure root directory is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from src.database.repository import get_repository
 from src.browser import BrowserManager
@@ -44,7 +46,32 @@ def save_checkpoint(last_page: int, total_saved: int, processed_urls: list):
         }, f, indent=2, ensure_ascii=False)
 
 
-def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float = 4.5, resume: bool = True):
+def wait_for_challenge(page, timeout_sec: int = 8) -> bool:
+    """Проверява дали страницата зарежда нормално или има Cloudflare Turnstile / DataDome."""
+    start = time.time()
+    while time.time() - start < timeout_sec:
+        try:
+            if page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
+                return True
+            title = (page.title() or "").strip()
+            # Click Turnstile checkbox if present
+            for sel in ["iframe[src*='cloudflare']", "iframe[src*='turnstile']", "input[type='checkbox']"]:
+                elem = page.query_selector(sel)
+                if elem:
+                    box = elem.bounding_box()
+                    if box:
+                        page.mouse.click(box["x"] + 25, box["y"] + 25)
+                        time.sleep(1.0)
+            if ("jobs.bg" in title.lower() or "обяви" in title.lower()) and "just a moment" not in title.lower():
+                if page.query_selector("a[href*='/job/'], a[href*='view_job.php']"):
+                    return True
+        except Exception:
+            pass
+        time.sleep(1.2)
+    return page.query_selector("a[href*='/job/'], a[href*='view_job.php']") is not None
+
+
+def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float = 4.5, resume: bool = True, headless: bool = False):
     load_dotenv()
     repo = get_repository()
     checkpoint = load_checkpoint() if resume else {"last_page": 0, "total_saved": 0, "processed_urls": []}
@@ -55,9 +82,9 @@ def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float =
     print(f"🚀 [Jobs.bg Backfill] Стартиране от страница {start_page} (До момента запазени: {total_saved})")
 
     # Launch local persistent browser
-    browser_mgr = BrowserManager(headless=False)  # Headed mode passes DataDome easily with home IP
+    browser_mgr = BrowserManager(headless=headless)
     try:
-        _pw, _ctx, page = browser_mgr.launch_session(headless=False)
+        _pw, _ctx, page = browser_mgr.launch_session(headless=headless)
     except Exception as e:
         print(f"⚠️ Грешка при стартиране на браузъра: {e}")
         return
@@ -74,6 +101,7 @@ def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float =
 
             try:
                 page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+                wait_for_challenge(page, timeout_sec=8)
                 # Humanized jitter delay
                 time.sleep(random.uniform(delay_min, delay_max))
 
@@ -177,11 +205,13 @@ if __name__ == "__main__":
     parser.add_argument("--min-delay", type=float, default=2.0, help="Минимално закъснение в секунди между страници")
     parser.add_argument("--max-delay", type=float, default=4.5, help="Максимално закъснение в секунди между страници")
     parser.add_argument("--no-resume", action="store_true", help="Започване отначало без чекпойнт")
+    parser.add_argument("--headless", action="store_true", help="Пуска в скрит режим")
 
     args = parser.parse_args()
     run_backfill(
         max_pages=args.pages,
         delay_min=args.min_delay,
         delay_max=args.max_delay,
-        resume=not args.no_resume
+        resume=not args.no_resume,
+        headless=args.headless
     )

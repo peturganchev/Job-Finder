@@ -532,6 +532,7 @@ class SupabaseRepository:
                     salary=r.get("salary"),
                     posted_date=r.get("posted_date"),
                     description=r.get("description") or f"Умения: {', '.join(r.get('skills', []))}",
+                    category=r.get("category"),
                     status=ApplicationStatus.NEW,
                     matched_skills=r.get("skills", []),
                 )
