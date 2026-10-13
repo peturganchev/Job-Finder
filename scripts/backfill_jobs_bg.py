@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from src.database.repository import get_repository
 from src.browser import BrowserManager
-from src.scrapers.email_digest_parser import batch_categorize_jobs
+from src.scrapers.email_digest_parser import classify_job_rule_based
 
 CHECKPOINT_FILE = os.path.join("data", "jobs_bg_backfill_checkpoint.json")
 
@@ -144,11 +144,12 @@ def run_backfill(max_pages: int = 20, delay_min: float = 2.0, delay_max: float =
                     print(f"   ℹ️ Няма намерени нови обяви на страница {current_page} (възможен край на списъка).")
                     break
 
-                # AI Categorization in batches of 20
-                categorized = batch_categorize_jobs(page_jobs)
+                # Zero-token classification (0 Google AI Studio tokens consumed!)
+                for j in page_jobs:
+                    j["category"] = classify_job_rule_based(j["title"], j["description"])
 
                 # Upsert into Supabase jobs_bg
-                saved = repo.upsert_jobs_bg(categorized)
+                saved = repo.upsert_jobs_bg(page_jobs)
                 total_saved += saved
                 print(f"   ✅ Страница {current_page}: Записани {saved} нови позиции в Supabase (Общо: {total_saved})")
 
