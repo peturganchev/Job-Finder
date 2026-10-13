@@ -434,6 +434,9 @@ def main():
     parser.add_argument("--sources", nargs="+", default=["all"], help="Източници (dev.bg, jobs.bg, linkedin или all)")
     parser.add_argument("--headless", action="store_true", help="Пуска браузъра в скрит режим")
     parser.add_argument("--max-jobs", type=int, default=15, help="Максимален брой обяви на източник за едно пускане")
+    parser.add_argument("--backfill-jobs-bg", action="store_true", help="Стартира безопасен бекфил за всички обяви от Jobs.bg в Supabase")
+    parser.add_argument("--verify-jobs-bg", action="store_true", help="Проверява активността на обявите в jobs_bg и маркира изтеклите")
+    parser.add_argument("--pages", type=int, default=15, help="Брой страници за бекфил на jobs.bg")
     parser.add_argument("--user-id", type=str, default=None, help="ID на потребителя за изолирано записване в Supabase")
     parser.add_argument("--access-token", type=str, default=None, help="Supabase JWT access token за автентикирани заявки")
 
@@ -441,6 +444,12 @@ def main():
 
     if args.api:
         cmd_api()
+    elif args.backfill_jobs_bg:
+        from scripts.backfill_jobs_bg import run_backfill
+        run_backfill(max_pages=args.pages)
+    elif args.verify_jobs_bg:
+        from scripts.verify_jobs_bg import verify_jobs
+        verify_jobs(limit=args.max_jobs if args.max_jobs != 15 else 50)
     elif args.login:
         cmd_login()
     elif args.dashboard:

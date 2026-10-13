@@ -460,5 +460,108 @@ class SupabaseRepository:
             ai_summary=data.get("ai_summary"),
             matched_skills=data.get("matched_skills") or [],
             missing_skills=data.get("missing_skills") or [],
-            cover_letter=data.get("cover_letter")
         )
+
+    def upsert_jobs_bg(self, items: List[Dict[str, Any]]) -> int:
+        """
+        Записва или обновява списък с позиции в таблицата jobs_bg.
+        """
+        if not items:
+            return 0
+        try:
+            now_iso = datetime.now().isoformat()
+            formatted_items = []
+            for item in items:
+                formatted_items.append({
+                    "job_id": str(item.get("job_id", "")),
+                    "url": item.get("url"),
+                    "title": item.get("title", ""),
+                    "company": item.get("company", ""),
+                    "location": item.get("location", ""),
+                    "salary": item.get("salary"),
+                    "description": item.get("description", ""),
+                    "skills": item.get("skills", []),
+                    "category": item.get("category"),
+                    "posted_date": item.get("posted_date"),
+                    "is_active": item.get("is_active", True),
+                    "last_seen_at": now_iso,
+                    "updated_at": now_iso,
+                })
+            res = self.client.table("jobs_bg").upsert(formatted_items, on_conflict="url").execute()
+            return len(res.data or [])
+        except Exception as e:
+            print(f"⚠️ Грешка при upsert в jobs_bg: {e}")
+            return 0
+
+    def search_jobs_bg(self, keywords: Optional[List[str]] = None, category: Optional[str] = None, limit: int = 25) -> List[Job]:
+        """
+        Търси активни позиции в глобалния каталог jobs_bg.
+        """
+        try:
+            query = self.client.table("jobs_bg").select("*").eq("is_active", True)
+            if category:
+                query = query.ilike("category", f"%{category}%")
+
+            # Взимаме последните обяви
+            res = query.order("created_at", desc=True).limit(limit * 3).execute()
+            rows = res.data or []
+
+            # Филтриране по ключови думи (ако са зададени)
+            matched_rows = []
+            if keywords:
+                lower_kws = [k.lower() for k in keywords if k]
+                for row in rows:
+                    text_corpus = f"{row.get('title', '')} {row.get('description', '')} {' '.join(row.get('skills', []))}".lower()
+                    if any(kw in text_corpus for kw in lower_kws):
+                        matched_rows.append(row)
+                        if len(matched_rows) >= limit:
+                            break
+            else:
+                matched_rows = rows[:limit]
+
+            # Превръщаме в списък от Job обекти
+            results = []
+            for r in matched_rows:
+                job = Job(
+                    source=JobSource.JOBS_BG,
+                    job_id=str(r.get("job_id") or r.get("id")),
+                    title=r.get("title", ""),
+                    company=r.get("company", ""),
+                    location=r.get("location", ""),
+                    url=r.get("url", ""),
+                    salary=r.get("salary"),
+                    posted_date=r.get("posted_date"),
+                    description=r.get("description") or f"Умения: {', '.join(r.get('skills', []))}",
+                    status=ApplicationStatus.NEW,
+                    matched_skills=r.get("skills", []),
+                )
+                results.append(job)
+            return results
+        except Exception as e:
+            print(f"⚠️ Грешка при търсене в jobs_bg: {e}")
+            return []
+
+    def mark_jobs_bg_inactive(self, urls: List[str]) -> int:
+        """Маркира дадени URL-и от jobs_bg като неактивни (is_active = False)."""
+        if not urls:
+            return 0
+        try:
+            now_iso = datetime.now().isoformat()
+            res = self.client.table("jobs_bg").update({
+                "is_active": False,
+                "updated_at": now_iso
+            }).in_("url", urls).execute()
+            return len(res.data or [])
+        except Exception as e:
+            print(f"⚠️ Грешка при маркиране като неактивни в jobs_bg: {e}")
+            return 0
+
+    def get_jobs_bg_for_verification(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Връща списък с активни позиции от jobs_bg за проверка."""
+        try:
+            res = self.client.table("jobs_bg").select("id, job_id, url, title, company").eq("is_active", True).order("last_seen_at", desc=False).limit(limit).execute()
+            return res.data or []
+        except Exception as e:
+            print(f"⚠️ Грешка при извличане за верификация: {e}")
+            return []
+

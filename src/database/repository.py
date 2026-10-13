@@ -347,6 +347,18 @@ class JobRepository:
                 for row in cursor.fetchall()
             ]
 
+    def upsert_jobs_bg(self, items: List[Dict[str, Any]]) -> int:
+        return 0
+
+    def search_jobs_bg(self, keywords: Optional[List[str]] = None, category: Optional[str] = None, limit: int = 25) -> List[Job]:
+        return []
+
+    def mark_jobs_bg_inactive(self, urls: List[str]) -> int:
+        return 0
+
+    def get_jobs_bg_for_verification(self, limit: int = 100) -> List[Dict[str, Any]]:
+        return []
+
     def _row_to_job(self, row: sqlite3.Row) -> Job:
         """Помощна функция за конвертиране на SQLite ред към Pydantic обект Job."""
         matched = []

@@ -136,12 +136,10 @@ def execute_search_job(
     except Exception as e:
         _update_task(task_id, log_msg=f"⚠️ Браузърът не е наличен: {e}. Продължаваме в HTTP режим.", user_id=user_id)
 
-    # Scrapers
+    # Scrapers (Live scraping for external portals)
     scrapers = []
     if "dev.bg" in active_sources:
         scrapers.append(DevBgScraper(page))
-    if "jobs.bg" in active_sources:
-        scrapers.append(JobsBgScraper(page))
     if "linkedin" in active_sources:
         scrapers.append(LinkedInScraper(page))
     if "euremotejobs" in active_sources:
@@ -153,7 +151,40 @@ def execute_search_job(
 
     new_jobs = []
     total_found = 0
-    step_increment = 60 / max(1, len(scrapers))
+
+    # 1. Търсене в каталога на Jobs.bg (ако е избран)
+    if "jobs.bg" in active_sources:
+        _update_task(task_id, log_msg="🔍 Търсене в каталога на jobs.bg...", user_id=user_id)
+        try:
+            bg_jobs = repo.search_jobs_bg(keywords=keywords, limit=max_jobs)
+            bg_added = 0
+            bg_skipped = 0
+            for job in bg_jobs:
+                if repo.user_has_job(job.url):
+                    bg_skipped += 1
+                    continue
+                job_db_id = repo.add_job(job)
+                if job_db_id:
+                    job.id = job_db_id
+                    new_jobs.append(job)
+                    total_found += 1
+                    bg_added += 1
+                    _update_task(
+                        task_id,
+                        jobs_found=total_found,
+                        log_msg=f"   ✨ jobs.bg: {job.title} @ {job.company}",
+                        user_id=user_id
+                    )
+            if bg_added > 0:
+                _update_task(task_id, log_msg=f"   ✅ jobs.bg: Добавени {bg_added} позиции от каталога.", user_id=user_id)
+            elif bg_skipped > 0:
+                _update_task(task_id, log_msg=f"   ℹ️ jobs.bg: Всички {bg_skipped} съответстващи позиции вече са в списъка ви.", user_id=user_id)
+            else:
+                _update_task(task_id, log_msg="   ℹ️ jobs.bg: Няма намерени позиции в каталога за тези ключови думи.", user_id=user_id)
+        except Exception as e:
+            _update_task(task_id, log_msg=f"   ⚠️ Грешка при търсене в каталога на jobs.bg: {e}", user_id=user_id)
+
+    step_increment = 60 / max(1, len(scrapers) if scrapers else 1)
     current_prog = 15.0
 
     try:
