@@ -406,3 +406,49 @@ def list_tasks(
             )
         )
     return SearchTaskListResponse(tasks=tasks, total=len(tasks))
+
+
+@router.get("/debug-jobs-bg", summary="Diagnose direct jobs.bg response from Render")
+def debug_jobs_bg():
+    """
+    Direct HTTP diagnostic request to jobs.bg from the hosting server (Render).
+    Returns exact status code, response headers (Server, x-datadome), and body snippet.
+    """
+    import httpx
+    target_url = "https://www.jobs.bg/front_job_search.php?keywords%5B%5D=Python"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "bg,en-US;q=0.9,en;q=0.8",
+    }
+
+    server_ip = None
+    try:
+        ip_resp = httpx.get("https://api.ipify.org?format=json", timeout=5.0)
+        server_ip = ip_resp.json().get("ip")
+    except Exception:
+        pass
+
+    try:
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=15.0) as client:
+            resp = client.get(target_url)
+            body = resp.text
+            return {
+                "server_outbound_ip": server_ip,
+                "target_url": target_url,
+                "status_code": resp.status_code,
+                "headers": dict(resp.headers),
+                "server_header": resp.headers.get("server"),
+                "x_datadome_header": resp.headers.get("x-datadome"),
+                "x_datadome_cid": resp.headers.get("x-datadome-cid"),
+                "has_captcha_delivery": "captcha-delivery.com" in body or "geo.captcha-delivery.com" in body,
+                "has_datadome_script": "datadome" in body.lower(),
+                "body_snippet_300": body[:300],
+                "body_length": len(body),
+            }
+    except Exception as e:
+        return {
+            "server_outbound_ip": server_ip,
+            "error": str(e),
+        }
+
