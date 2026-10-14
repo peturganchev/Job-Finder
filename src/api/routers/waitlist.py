@@ -234,8 +234,8 @@ def approve_request(
     if not target_email:
         raise HTTPException(status_code=404, detail="Request not found or has no email")
 
-    # 2. Build invite URL
-    invite_url = f"https://job-finder.archevyn.dev/#register?email={target_email}"
+    # 2. Build invite URL (using query param to guarantee reliable routing across all browsers)
+    invite_url = f"https://job-finder.archevyn.dev/?register=true&email={target_email}"
 
     # 3. Send email if possible
     email_sent = _send_approval_email(target_email, target_name, invite_url)
