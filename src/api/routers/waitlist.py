@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 
-from src.api.dependencies import get_current_user_optional, get_supabase_client
+from src.api.dependencies import get_current_user_optional, get_supabase_client, get_service_role_client
 
 router = APIRouter()
 
@@ -94,7 +94,9 @@ def list_waitlist_requests(
 ):
     """Returns all access requests. Restricted to administrators."""
     client = get_supabase_client()
-    if not client:
+    srv_client = get_service_role_client()
+    db = srv_client or client
+    if not db:
         raise HTTPException(status_code=500, detail="Database not configured")
 
     user_email = user.get("email", "").lower() if user else ""
@@ -105,7 +107,7 @@ def list_waitlist_requests(
         )
 
     try:
-        res = client.table("access_requests").select("*").order("created_at", desc=True).execute()
+        res = db.table("access_requests").select("*").order("created_at", desc=True).execute()
         return res.data or []
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading requests: {e}")
@@ -121,7 +123,9 @@ def approve_request(
     and optionally sends an email if SMTP is configured.
     """
     client = get_supabase_client()
-    if not client:
+    srv_client = get_service_role_client()
+    db = srv_client or client
+    if not db:
         raise HTTPException(status_code=500, detail="Database not configured")
 
     user_email = user.get("email", "").lower() if user else ""
@@ -131,11 +135,10 @@ def approve_request(
             detail="Access restricted to platform administrators."
         )
 
-    # 1. Update status to approved
+    # 1. Update status to approved (without non-existent updated_at column)
     try:
-        update_res = client.table("access_requests").update({
-            "status": "approved",
-            "updated_at": datetime.now().isoformat()
+        update_res = db.table("access_requests").update({
+            "status": "approved"
         }).eq("id", payload.id).execute()
 
         # If email was not passed in payload, fetch from DB
@@ -147,7 +150,7 @@ def approve_request(
 
         if not target_email:
             # Query row
-            row_res = client.table("access_requests").select("email, full_name").eq("id", payload.id).limit(1).execute()
+            row_res = db.table("access_requests").select("email, full_name").eq("id", payload.id).limit(1).execute()
             if row_res.data:
                 target_email = row_res.data[0].get("email")
                 target_name = row_res.data[0].get("full_name") or target_name
@@ -178,7 +181,9 @@ def reject_request(
 ):
     """Rejects waitlist applicant."""
     client = get_supabase_client()
-    if not client:
+    srv_client = get_service_role_client()
+    db = srv_client or client
+    if not db:
         raise HTTPException(status_code=500, detail="Database not configured")
 
     user_email = user.get("email", "").lower() if user else ""
@@ -189,9 +194,8 @@ def reject_request(
         )
 
     try:
-        client.table("access_requests").update({
-            "status": "rejected",
-            "updated_at": datetime.now().isoformat()
+        db.table("access_requests").update({
+            "status": "rejected"
         }).eq("id", payload.id).execute()
         return WaitlistResponse(
             success=True,
