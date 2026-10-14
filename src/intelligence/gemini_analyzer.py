@@ -480,11 +480,22 @@ class GeminiJobAnalyzer:
                 )
                 return _extract_interaction_text(response).strip()
             else:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=prompt,
-                )
-                return (response.text or "").strip()
+                candidate_models = [self.model_name, "gemini-3.5-flash", "gemini-2.5-pro"]
+                seen_models = set()
+                models_to_try = [m for m in candidate_models if not (m in seen_models or seen_models.add(m))]
+                last_err = None
+                for m in models_to_try:
+                    try:
+                        response = self.client.models.generate_content(
+                            model=m,
+                            contents=prompt,
+                        )
+                        if response and response.text:
+                            return response.text.strip()
+                    except Exception as me:
+                        last_err = me
+                        continue
+                return f"Грешка при генериране: {last_err or 'Всички модели върнаха грешка'}"
         except Exception as e:
             return f"Грешка при генериране: {e}"
 

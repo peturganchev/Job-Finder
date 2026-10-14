@@ -124,7 +124,8 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
         {
           sources: sourcesToUse,
           keywords: currentKeywords,
-          max_jobs: maxJobsPerSource,
+          max_jobs: Number(maxJobsPerSource) || 25,
+          clear_new: true, // Clean temporary 'new' jobs so fresh search results replace previous ones without losing saved/applied jobs
         },
         authToken
       );
@@ -161,7 +162,7 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
     } catch (err: any) {
       console.error('Failed to start search:', err);
       setSearchLog(`⚠️ Грешка: ${err.message || 'Неуспешна заявка'}`);
-      setTimeout(() => setIsSearching(false), 3000);
+      setTimeout(() => setIsSearching(false), 5000);
     }
   };
 
@@ -190,7 +191,13 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
       // Tags filter (OR matching across title, skills, description)
       if (tags.length > 0) {
         const textCorpus = `${job.title} ${job.company} ${job.location} ${(job.matched_skills || []).join(' ')} ${job.description || ''}`.toLowerCase();
-        const matchesTag = tags.some((tag) => textCorpus.includes(tag.toLowerCase()));
+        const matchesTag = tags.some((tag) => {
+          const lowerTag = tag.toLowerCase().trim();
+          if (!lowerTag) return false;
+          if (textCorpus.includes(lowerTag)) return true;
+          const words = lowerTag.split(/\s+/).filter(Boolean);
+          return words.length > 1 && words.every((w) => textCorpus.includes(w));
+        });
         if (!matchesTag) return false;
       }
 

@@ -139,7 +139,7 @@ export async function apiGenerateCoverLetter(
   return res.json();
 }
 
-/** Start asynchronous scraping search */
+/** Start asynchronous scraping search with automatic cold-start retry */
 export async function apiStartSearch(
   payload: {
     keywords?: string[];
@@ -151,16 +151,48 @@ export async function apiStartSearch(
   token?: string | null
 ): Promise<SearchStartResponse> {
   const url = `${API_BASE_URL}/api/search/start`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: getHeaders(token),
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `Failed to initiate search`);
+  const maxRetries = 2;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: getHeaders(token),
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        // If 502/503/504 (cold start on Render), retry
+        if ([502, 503, 504].includes(res.status) && attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+
+        const data = await res.json().catch(() => null);
+        let errorMsg = `HTTP ${res.status}: Неуспешно стартиране на търсенето`;
+        if (data?.detail) {
+          if (typeof data.detail === 'string') {
+            errorMsg = data.detail;
+          } else if (Array.isArray(data.detail)) {
+            errorMsg = data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
+          }
+        }
+        throw new Error(errorMsg);
+      }
+
+      return await res.json();
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < maxRetries && (err.name === 'TypeError' || err.message?.includes('fetch'))) {
+        await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      break;
+    }
   }
-  return res.json();
+
+  throw lastError || new Error('Неуспешно свързване със сървъра за търсене');
 }
 
 /** Get search task status and logs */
