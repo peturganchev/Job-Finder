@@ -19,9 +19,12 @@ import {
   Globe,
   Zap,
   Rocket,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { apiGetSettings, apiUpdateSettings, apiVerifyGeminiKey, type SettingsData } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 interface SettingsViewProps {
   onOpenAdmin: () => void;
@@ -58,7 +61,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
   const [currentUIMode, setCurrentUIMode] = useState<'simple' | 'pro'>(() => {
     return uiMode || (localStorage.getItem('jf_ui_mode') as 'simple' | 'pro') || 'simple';
   });
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const { theme, setTheme, applyServerTheme } = useTheme();
 
   // Active Sources (Persistent with localStorage fallback)
   const [activeSources, setActiveSources] = useState<string[]>(() => {
@@ -125,7 +128,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
           localStorage.setItem('jf_ui_mode', data.ui_mode);
         }
         if (data.theme) {
-          setTheme(data.theme);
+          applyServerTheme(data.theme);
         }
         if (data.active_sources && data.active_sources.length > 0) {
           const normalized = data.active_sources.map((s) => s.replace('.', '_'));
@@ -311,7 +314,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
         <button
           onClick={handleSaveSettings}
           disabled={saving}
-          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition"
+          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-on-accent font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition"
         >
           {saving ? (
             <>
@@ -422,6 +425,71 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
               Всички 6 екрана: Kanban табло с drag-and-drop статуси, търсачка с жив терминал за логове, подробен пазарен анализ и кариерен роудмап.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Theme Selection Card */}
+      <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-5">
+        <div className="flex items-center gap-2.5">
+          <Sun className="w-5 h-5 text-amber-400" />
+          <div>
+            <h3 className="text-sm font-bold text-white">Тема на Интерфейса (Appearance)</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Превключвайте между нощна тъмна тема или пастелна морска ментова (Seafoam) тема
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Dark Mode Option */}
+          <div
+            onClick={() => setTheme('dark')}
+            className={`p-5 rounded-xl border cursor-pointer transition-all ${
+              theme === 'dark'
+                ? 'bg-emerald-600/15 border-emerald-500/60 shadow-lg shadow-emerald-500/10 ring-1 ring-emerald-500/30'
+                : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 opacity-75'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Moon className="w-4 h-4 text-emerald-400" />
+                <span>🌙 Midnight Aurora (Тъмна)</span>
+              </div>
+              {theme === 'dark' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  Активна
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Дълбоки графитени и нощни тонове с неонови смарагдови акценти. Перфектна за работа на слаба светлина.
+            </p>
+          </div>
+
+          {/* Light Seafoam Option */}
+          <div
+            onClick={() => setTheme('light')}
+            className={`p-5 rounded-xl border cursor-pointer transition-all ${
+              theme === 'light'
+                ? 'bg-teal-600/15 border-teal-500/60 shadow-lg shadow-teal-500/10 ring-1 ring-teal-500/30'
+                : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 opacity-75'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Sun className="w-4 h-4 text-amber-400" />
+                <span>☀️ Seafoam Pastel (Светла)</span>
+              </div>
+              {theme === 'light' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                  Активна
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Мек пастелен ментово-зелен оттенък без агресивно бяло, с отлична четливост и контраст през деня.
             </p>
           </div>
         </div>

@@ -530,7 +530,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }
                 <button
                   type="button"
                   onClick={onOpenAuth}
-                  className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition shrink-0"
+                  className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-on-accent font-bold text-xs transition shrink-0"
                 >
                   Вход
                 </button>
@@ -669,7 +669,7 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }
           <button
             onClick={handleStartSearch}
             disabled={isStarting || selectedSources.length === 0}
-            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-500/20 disabled:opacity-50 transition"
+            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-on-accent font-bold text-sm flex items-center justify-center gap-2.5 shadow-xl shadow-emerald-500/20 disabled:opacity-50 transition"
           >
             {isStarting ? (
               <>

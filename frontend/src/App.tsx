@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { MobileNav } from './components/MobileNav';
@@ -22,6 +23,7 @@ import { Sparkles, Lock, LogIn, Cpu } from 'lucide-react';
 
 function AppContent() {
   const { user, session, loading: authLoading } = useAuth();
+  const { applyServerTheme } = useTheme();
 
   // 1. Detect if the user arrived via registration/invite link (?register=true, #register, or #type=invite)
   const initialInvite = (() => {
@@ -212,6 +214,9 @@ function AppContent() {
         setUiMode(data.ui_mode);
         localStorage.setItem('jf_ui_mode', data.ui_mode);
       }
+      if (data.theme) {
+        applyServerTheme(data.theme);
+      }
       if (data.active_sources && data.active_sources.length > 0) {
         const normalized = data.active_sources.map((s) => s.replace('.', '_'));
         setActiveSources(normalized);
@@ -285,10 +290,10 @@ function AppContent() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#090d16] flex items-center justify-center">
+      <div className="min-h-screen bg-app-bg flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 animate-pulse">
-            <Cpu className="w-7 h-7 text-slate-950 font-bold" />
+            <Cpu className="w-7 h-7 text-on-accent font-bold" />
           </div>
           <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-slate-400 font-medium tracking-wide">Проверка на защитена сесия...</p>
@@ -298,7 +303,7 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-300">
+    <div className="min-h-screen bg-app-bg text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-300">
       {/* Navigation */}
       <Navbar
         currentTab={currentTab}
@@ -339,7 +344,7 @@ function AppContent() {
               <div className="flex flex-col sm:flex-row gap-3 justify-center mb-8">
                 <button
                   onClick={() => handleOpenAuth('signin')}
-                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-on-accent font-bold text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <LogIn className="w-4 h-4" />
                   <span>Вход в Профила</span>
@@ -492,7 +497,9 @@ function AppContent() {
 export function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ThemeProvider>
+        <AppContent />
+      </ThemeProvider>
     </AuthProvider>
   );
 }

@@ -380,7 +380,7 @@ export const InsightsView: React.FC<InsightsViewProps> = ({
             <button
               onClick={handleGenerateReport}
               disabled={loadingReport}
-              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition shrink-0"
+              className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-on-accent font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50 transition shrink-0"
             >
               {loadingReport ? (
                 <>

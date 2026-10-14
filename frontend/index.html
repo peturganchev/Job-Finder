@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="theme-dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Job-Finder v2 | AI Market Intelligence</title>
+    <script>
+      // Apply the saved theme before React mounts to avoid a flash of the wrong theme
+      (function () {
+        try {
+          var t = localStorage.getItem('jf_theme') === 'light' ? 'light' : 'dark';
+          var c = document.documentElement.classList;
+          c.remove('theme-dark', 'theme-light');
+          c.add('theme-' + t);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

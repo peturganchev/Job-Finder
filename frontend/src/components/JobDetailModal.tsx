@@ -162,7 +162,7 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
                 href={job.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition"
+                className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-on-accent text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition"
               >
                 <span>Към Обявата</span>
                 <ExternalLink className="w-3.5 h-3.5" />

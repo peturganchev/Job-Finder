@@ -166,7 +166,7 @@ export const TerminalLogs: React.FC<TerminalLogsProps> = ({
           {onViewJobs && (
             <button
               onClick={onViewJobs}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition shrink-0"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-on-accent font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition shrink-0"
             >
               <span>Прегледай Обявите</span>
               <ArrowRight className="w-3.5 h-3.5" />
