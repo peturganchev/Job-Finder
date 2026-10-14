@@ -38,54 +38,128 @@ class WhitelistCheckResponse(BaseModel):
 
 
 def _send_approval_email(email: str, full_name: str, invite_url: str) -> bool:
-    """Attempts to send an approval email via SMTP if configured in environment."""
+    """
+    Attempts to send an approval email using available infrastructure:
+    1. Native Supabase Auth Admin invite (zero external email setup needed)
+    2. Resend REST API (if RESEND_API_KEY is configured)
+    3. Custom SMTP (if configured)
+    """
+    # 1. Supabase Auth Native Invite
+    srv_client = get_service_role_client()
+    if srv_client and hasattr(srv_client, "auth") and hasattr(srv_client.auth, "admin"):
+        try:
+            invite_res = srv_client.auth.admin.invite_user_by_email(
+                email,
+                options={
+                    "data": {"full_name": full_name or ""},
+                    "redirect_to": invite_url
+                }
+            )
+            if invite_res and getattr(invite_res, "user", None):
+                print(f"✅ Supabase Auth изпрати покана за регистрация до {email}")
+                return True
+        except Exception as e:
+            err_msg = str(e).lower()
+            print(f"⚠️ Supabase invite_user_by_email info: {e}")
+            if "already" in err_msg or "exists" in err_msg:
+                # User already exists in auth.users
+                return True
+
+    # 2. Resend REST API (if configured)
+    resend_key = os.getenv("RESEND_API_KEY")
+    if resend_key:
+        try:
+            import httpx
+            sender = os.getenv("RESEND_FROM") or os.getenv("EMAIL_FROM") or "Job-Finder AI <onboarding@resend.dev>"
+            html = f"""
+            <html>
+              <body style="font-family: Arial, sans-serif; background-color: #090d16; color: #f1f5f9; padding: 24px;">
+                <div style="max-width: 540px; margin: 0 auto; background-color: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; text-align: center;">
+                  <h2 style="color: #10b981; margin-bottom: 12px;">Поздравления, {full_name or 'Колега'}!</h2>
+                  <p style="color: #cbd5e1; font-size: 15px; line-height: 1.6;">
+                    Вашата заявка за ранен достъп до <strong>Job-Finder v2</strong> беше одобрена.
+                  </p>
+                  <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin-bottom: 24px;">
+                    Кликнете на бутона по-долу, за да създадете своята парола и да активирате профила си.
+                  </p>
+                  <a href="{invite_url}" style="display: inline-block; background: linear-gradient(135deg, #10b981, #14b8a6); color: #022c22; font-weight: bold; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 14px;">
+                    Завърши регистрацията →
+                  </a>
+                  <p style="color: #64748b; font-size: 11px; margin-top: 24px;">
+                    Или отворете директно следния линк в браузъра:<br>
+                    <a href="{invite_url}" style="color: #38bdf8;">{invite_url}</a>
+                  </p>
+                </div>
+              </body>
+            </html>
+            """
+            resp = httpx.post(
+                "https://api.resend.com/emails",
+                headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                json={
+                    "from": sender,
+                    "to": [email],
+                    "subject": "🎉 Вашият достъп до Job-Finder v2 е одобрен!",
+                    "html": html,
+                },
+                timeout=10.0,
+            )
+            if resp.status_code in [200, 201]:
+                print(f"✅ Resend изпрати покана до {email}")
+                return True
+            else:
+                print(f"⚠️ Resend status: {resp.status_code} {resp.text}")
+        except Exception as e:
+            print(f"⚠️ Resend грешка: {e}")
+
+    # 3. Custom SMTP fallback
     smtp_host = os.getenv("SMTP_HOST")
     smtp_port = int(os.getenv("SMTP_PORT", 587))
     smtp_user = os.getenv("SMTP_USER")
     smtp_password = os.getenv("SMTP_PASSWORD")
     sender = os.getenv("SMTP_FROM") or smtp_user or "no-reply@archevyn.dev"
 
-    if not (smtp_host and smtp_user and smtp_password):
-        return False
+    if smtp_host and smtp_user and smtp_password:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = "🎉 Вашият достъп до Job-Finder v2 е одобрен!"
+            msg["From"] = f"Job-Finder AI <{sender}>"
+            msg["To"] = email
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "🎉 Вашият достъп до Job-Finder v2 е одобрен!"
-        msg["From"] = f"Job-Finder AI <{sender}>"
-        msg["To"] = email
+            html = f"""
+            <html>
+              <body style="font-family: Arial, sans-serif; background-color: #090d16; color: #f1f5f9; padding: 24px;">
+                <div style="max-width: 540px; margin: 0 auto; background-color: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; text-align: center;">
+                  <h2 style="color: #10b981; margin-bottom: 12px;">Поздравления, {full_name or 'Колега'}!</h2>
+                  <p style="color: #cbd5e1; font-size: 15px; line-height: 1.6;">
+                    Вашата заявка за ранен достъп до <strong>Job-Finder v2</strong> беше одобрена.
+                  </p>
+                  <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin-bottom: 24px;">
+                    Кликнете на бутона по-долу, за да създадете своята парола и да активирате профила си.
+                  </p>
+                  <a href="{invite_url}" style="display: inline-block; background: linear-gradient(135deg, #10b981, #14b8a6); color: #022c22; font-weight: bold; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 14px;">
+                    Завърши регистрацията →
+                  </a>
+                  <p style="color: #64748b; font-size: 11px; margin-top: 24px;">
+                    Или отворете директно следния линк в браузъра:<br>
+                    <a href="{invite_url}" style="color: #38bdf8;">{invite_url}</a>
+                  </p>
+                </div>
+              </body>
+            </html>
+            """
+            msg.attach(MIMEText(html, "html"))
 
-        html = f"""
-        <html>
-          <body style="font-family: Arial, sans-serif; background-color: #090d16; color: #f1f5f9; padding: 24px;">
-            <div style="max-width: 540px; margin: 0 auto; background-color: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 32px; text-align: center;">
-              <h2 style="color: #10b981; margin-bottom: 12px;">Поздравления, {full_name or 'Колега'}!</h2>
-              <p style="color: #cbd5e1; font-size: 15px; line-height: 1.6;">
-                Вашата заявка за ранен достъп до <strong>Job-Finder v2</strong> беше одобрена.
-              </p>
-              <p style="color: #94a3b8; font-size: 13px; line-height: 1.5; margin-bottom: 24px;">
-                Кликнете на бутона по-долу, за да създадете своята парола и да активирате профила си.
-              </p>
-              <a href="{invite_url}" style="display: inline-block; background: linear-gradient(135deg, #10b981, #14b8a6); color: #022c22; font-weight: bold; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 14px;">
-                Завърши регистрацията →
-              </a>
-              <p style="color: #64748b; font-size: 11px; margin-top: 24px;">
-                Или отворете директно следния линк в браузъра:<br>
-                <a href="{invite_url}" style="color: #38bdf8;">{invite_url}</a>
-              </p>
-            </div>
-          </body>
-        </html>
-        """
-        msg.attach(MIMEText(html, "html"))
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.send_message(msg)
+            return True
+        except Exception as e:
+            print(f"⚠️ Грешка при изпращане по SMTP: {e}")
+            return False
 
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_password)
-            server.send_message(msg)
-        return True
-    except Exception as e:
-        print(f"⚠️ Грешка при изпращане на имейл: {e}")
-        return False
+    return False
 
 
 @router.get("/requests", summary="List all waitlist requests (Admin only)")
