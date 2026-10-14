@@ -54,6 +54,41 @@ function getHeaders(token?: string | null): HeadersInit {
   return headers;
 }
 
+/**
+ * Executes a fetch request with automatic retries for cold-start delays (502, 503, 504)
+ * and network wakeup failures common on free-tier cloud backends like Render.
+ */
+export async function fetchWithColdStartRetry(
+  url: string,
+  options?: RequestInit,
+  maxRetries: number = 7,
+  initialDelayMs: number = 2000
+): Promise<Response> {
+  let lastError: any = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if ([502, 503, 504].includes(res.status) && attempt < maxRetries) {
+        const delay = Math.min(initialDelayMs * Math.pow(1.25, attempt), 5000);
+        console.warn(`[ColdStart] Received HTTP ${res.status} from ${url}. Retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries})...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      return res;
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < maxRetries && (err.name === 'TypeError' || err.message?.includes('fetch') || err.message?.includes('network') || err.message?.includes('Failed'))) {
+        const delay = Math.min(initialDelayMs * Math.pow(1.25, attempt), 5000);
+        console.warn(`[ColdStart] Network connection failed for ${url}. Retrying in ${Math.round(delay)}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      break;
+    }
+  }
+  throw lastError || new Error(`Failed to connect to ${url}`);
+}
+
 /** Fetch jobs with optional filtering */
 export async function apiFetchJobs(
   params?: {
@@ -73,30 +108,11 @@ export async function apiFetchJobs(
   if (params?.limit) query.append('limit', params.limit.toString());
 
   const url = `${API_BASE_URL}/api/jobs${query.toString() ? `?${query.toString()}` : ''}`;
-  const maxRetries = 2;
-  let lastError: any = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const res = await fetch(url, { headers: getHeaders(token) });
-      if (!res.ok) {
-        if ([502, 503, 504].includes(res.status) && attempt < maxRetries) {
-          await new Promise((r) => setTimeout(r, 2000));
-          continue;
-        }
-        throw new Error(`Failed to fetch jobs: ${res.statusText}`);
-      }
-      return await res.json();
-    } catch (err) {
-      lastError = err;
-      if (attempt < maxRetries) {
-        await new Promise((r) => setTimeout(r, 1500));
-        continue;
-      }
-    }
+  const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 5, 2000);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch jobs: ${res.statusText}`);
   }
-
-  throw lastError || new Error('Failed to fetch jobs');
+  return res.json();
 }
 
 /** Update application status */
@@ -170,48 +186,31 @@ export async function apiStartSearch(
   token?: string | null
 ): Promise<SearchStartResponse> {
   const url = `${API_BASE_URL}/api/search/start`;
-  const maxRetries = 2;
-  let lastError: Error | null = null;
+  const res = await fetchWithColdStartRetry(
+    url,
+    {
+      method: 'POST',
+      headers: getHeaders(token),
+      body: JSON.stringify(payload),
+    },
+    7,
+    2000
+  );
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: getHeaders(token),
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        // If 502/503/504 (cold start on Render), retry
-        if ([502, 503, 504].includes(res.status) && attempt < maxRetries) {
-          await new Promise((r) => setTimeout(r, 2000));
-          continue;
-        }
-
-        const data = await res.json().catch(() => null);
-        let errorMsg = `HTTP ${res.status}: Неуспешно стартиране на търсенето`;
-        if (data?.detail) {
-          if (typeof data.detail === 'string') {
-            errorMsg = data.detail;
-          } else if (Array.isArray(data.detail)) {
-            errorMsg = data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
-          }
-        }
-        throw new Error(errorMsg);
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    let errorMsg = `HTTP ${res.status}: Неуспешно стартиране на търсенето`;
+    if (data?.detail) {
+      if (typeof data.detail === 'string') {
+        errorMsg = data.detail;
+      } else if (Array.isArray(data.detail)) {
+        errorMsg = data.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
       }
-
-      return await res.json();
-    } catch (err: any) {
-      lastError = err;
-      if (attempt < maxRetries && (err.name === 'TypeError' || err.message?.includes('fetch'))) {
-        await new Promise((r) => setTimeout(r, 2000));
-        continue;
-      }
-      break;
     }
+    throw new Error(errorMsg);
   }
 
-  throw lastError || new Error('Неуспешно свързване със сървъра за търсене');
+  return res.json();
 }
 
 /** Get search task status and logs */
@@ -220,9 +219,7 @@ export async function apiGetSearchStatus(
   token?: string | null
 ): Promise<SearchStatusResponse> {
   const url = `${API_BASE_URL}/api/search/status/${taskId}`;
-  const res = await fetch(url, {
-    headers: getHeaders(token),
-  });
+  const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 3, 1000);
   if (!res.ok) {
     throw new Error(`Failed to get search task status`);
   }
@@ -275,7 +272,7 @@ export async function apiFetchMarketStats(
   token?: string | null
 ): Promise<MarketStats> {
   const url = `${API_BASE_URL}/api/market/stats?deduplicate=${deduplicate}`;
-  const res = await fetch(url, { headers: getHeaders(token) });
+  const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 4, 1500);
   if (!res.ok) {
     throw new Error(`Failed to fetch market stats`);
   }
@@ -288,7 +285,7 @@ export async function apiFetchMarketReport(
   token?: string | null
 ): Promise<{ report: string; generated_at: string }> {
   const url = `${API_BASE_URL}/api/market/report?limit=${limit}`;
-  const res = await fetch(url, { headers: getHeaders(token) });
+  const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 4, 1500);
   if (!res.ok) {
     throw new Error(`Failed to fetch market report`);
   }
@@ -321,7 +318,7 @@ export interface GeminiVerifyResponse {
 /** Fetch user settings */
 export async function apiGetSettings(token?: string | null): Promise<SettingsData> {
   const url = `${API_BASE_URL}/api/settings`;
-  const res = await fetch(url, { headers: getHeaders(token) });
+  const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 5, 2000);
   if (!res.ok) {
     throw new Error(`Failed to fetch settings: ${res.statusText}`);
   }
@@ -347,11 +344,16 @@ export async function apiUpdateSettings(
   token?: string | null
 ): Promise<{ success: boolean; message: string }> {
   const url = `${API_BASE_URL}/api/settings`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: getHeaders(token),
-    body: JSON.stringify(payload),
-  });
+  const res = await fetchWithColdStartRetry(
+    url,
+    {
+      method: 'POST',
+      headers: getHeaders(token),
+      body: JSON.stringify(payload),
+    },
+    6,
+    2000
+  );
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || 'Failed to update settings');
@@ -403,18 +405,21 @@ export interface WhitelistCheckResponse {
 /** Check if email is whitelisted for signup */
 export async function apiCheckWaitlist(email: string): Promise<WhitelistCheckResponse> {
   const url = `${API_BASE_URL}/api/waitlist/check/${encodeURIComponent(email)}`;
-  const res = await fetch(url, { headers: getHeaders() });
-  if (!res.ok) {
-    // If endpoint fails, fallback to allowed
+  try {
+    const res = await fetchWithColdStartRetry(url, { headers: getHeaders() }, 4, 1500);
+    if (!res.ok) {
+      return { allowed: true, status: 'approved', message: 'Проверката премина успешно.' };
+    }
+    return res.json();
+  } catch {
     return { allowed: true, status: 'approved', message: 'Проверката премина успешно.' };
   }
-  return res.json();
 }
 
 /** Get all waitlist access requests (Admin only) */
 export async function apiGetWaitlistRequests(token?: string | null): Promise<WaitlistRequestItem[]> {
   const url = `${API_BASE_URL}/api/waitlist/requests`;
-  const res = await fetch(url, { headers: getHeaders(token) });
+  const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 4, 1500);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || 'Неуспешно извличане на списъка с чакащи');
