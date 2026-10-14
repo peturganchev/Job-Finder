@@ -174,10 +174,12 @@ class SettingsResponse(BaseModel):
     blacklist_companies: List[str] = Field(default_factory=list)
     search_keywords: List[str] = Field(default_factory=list)
     active_sources: List[str] = Field(default_factory=list)
-    max_jobs_per_source: int = 15
+    max_jobs_per_source: int = 25
     location: str = "Bulgaria"
     remote_location: str = "Worldwide"
     roadmap_progress: Dict[str, Any] = Field(default_factory=dict)
+    ui_mode: str = "simple"
+    theme: str = "dark"
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -191,6 +193,8 @@ class SettingsUpdateRequest(BaseModel):
     location: Optional[str] = None
     remote_location: Optional[str] = None
     roadmap_progress: Optional[Dict[str, Any]] = None
+    ui_mode: Optional[str] = None
+    theme: Optional[str] = None
 
 
 class GeminiVerifyRequest(BaseModel):

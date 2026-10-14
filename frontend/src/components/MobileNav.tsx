@@ -12,21 +12,29 @@ interface MobileNavProps {
   currentTab: string;
   onSelectTab: (tab: string) => void;
   jobsCount?: number;
+  uiMode?: 'simple' | 'pro';
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({
   currentTab,
   onSelectTab,
   jobsCount,
+  uiMode = 'simple',
 }) => {
-  const tabs = [
-    { id: 'jobs', label: 'Обяви', icon: Briefcase, badge: jobsCount },
-    { id: 'search', label: 'Търсене', icon: Search },
-    { id: 'roadmap', label: 'План', icon: Award },
-    { id: 'profile', label: 'Профил', icon: User },
-    { id: 'insights', label: 'Анализ', icon: TrendingUp },
-    { id: 'settings', label: 'Опции', icon: Settings },
-  ];
+  const tabs = uiMode === 'simple'
+    ? [
+        { id: 'jobs', label: 'Обяви & Търсене', icon: Briefcase, badge: jobsCount },
+        { id: 'profile', label: 'Профил', icon: User },
+        { id: 'settings', label: 'Настройки', icon: Settings },
+      ]
+    : [
+        { id: 'jobs', label: 'Обяви', icon: Briefcase, badge: jobsCount },
+        { id: 'search', label: 'Търсене', icon: Search },
+        { id: 'roadmap', label: 'План', icon: Award },
+        { id: 'profile', label: 'Профил', icon: User },
+        { id: 'insights', label: 'Анализ', icon: TrendingUp },
+        { id: 'settings', label: 'Опции', icon: Settings },
+      ];
 
   return (
     <nav

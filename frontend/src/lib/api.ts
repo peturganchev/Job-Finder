@@ -257,6 +257,8 @@ export interface SettingsData {
   location: string;
   remote_location: string;
   roadmap_progress: Record<string, unknown>;
+  ui_mode?: 'simple' | 'pro';
+  theme?: 'dark' | 'light';
 }
 
 export interface GeminiVerifyResponse {
@@ -288,6 +290,8 @@ export async function apiUpdateSettings(
     location?: string;
     remote_location?: string;
     roadmap_progress?: Record<string, unknown>;
+    ui_mode?: 'simple' | 'pro';
+    theme?: 'dark' | 'light';
   },
   token?: string | null
 ): Promise<{ success: boolean; message: string }> {
