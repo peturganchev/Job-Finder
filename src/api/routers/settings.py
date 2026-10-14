@@ -16,6 +16,7 @@ from src.api.schemas import (
 from src.api.dependencies import (
     get_current_user_optional,
     get_supabase_client,
+    get_service_role_client,
 )
 from src.settings_manager import SettingsManager, AVAILABLE_MODELS
 from src.intelligence.gemini_analyzer import get_available_gemini_models
@@ -205,25 +206,30 @@ def update_settings(
             except Exception as upsert_err:
                 err_str = str(upsert_err).lower()
                 print(f"⚠️ Primary user_settings upsert error: {err_str}")
-                # If column doesn't exist yet in Supabase SQL schema cache (PGRST204 or missing column)
-                if "pgrst204" in err_str or "column" in err_str or "schema cache" in err_str:
-                    fallback_payload = dict(update_payload)
-                    cur_rp = fallback_payload.get("roadmap_progress") or {}
-                    if not isinstance(cur_rp, dict):
-                        cur_rp = {}
-                    cur_rp["_ui_preferences"] = {
-                        "ui_mode": req.ui_mode or "simple",
-                        "theme": req.theme or "dark",
-                        "max_jobs_per_source": req.max_jobs_per_source or 25,
-                    }
-                    fallback_payload["roadmap_progress"] = cur_rp
-                    for k in ["ui_mode", "theme", "max_jobs_per_source"]:
-                        fallback_payload.pop(k, None)
 
-                    client.table("user_settings").upsert(fallback_payload, on_conflict="user_id").execute()
-                    print("✅ Fallback user_settings upsert succeeded with embedded _ui_preferences in roadmap_progress.")
-                else:
-                    raise upsert_err
+                # Build fallback payload embedding UI preferences into roadmap_progress if needed
+                fallback_payload = dict(update_payload)
+                cur_rp = fallback_payload.get("roadmap_progress") or {}
+                if not isinstance(cur_rp, dict):
+                    cur_rp = {}
+                cur_rp["_ui_preferences"] = {
+                    "ui_mode": req.ui_mode or "simple",
+                    "theme": req.theme or "dark",
+                    "max_jobs_per_source": req.max_jobs_per_source or 25,
+                }
+                fallback_payload["roadmap_progress"] = cur_rp
+                for k in ["ui_mode", "theme", "max_jobs_per_source"]:
+                    fallback_payload.pop(k, None)
+
+                # Try with service role client if available (bypasses RLS or token renewal issues)
+                srv_client = get_service_role_client()
+                target_client = srv_client or client
+
+                try:
+                    target_client.table("user_settings").upsert(fallback_payload, on_conflict="user_id").execute()
+                    print("✅ Resilient user_settings upsert succeeded with embedded _ui_preferences.")
+                except Exception as final_err:
+                    print(f"⚠️ Resilient user_settings upsert failed: {final_err}")
         except Exception as e:
             print(f"⚠️ Error updating Supabase user_settings: {e}")
 

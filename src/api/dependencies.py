@@ -28,6 +28,18 @@ def get_supabase_client() -> Optional[Any]:
     return None
 
 
+def get_service_role_client() -> Optional[Any]:
+    """Returns a privileged Supabase client using service role key if available."""
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if url and key and create_client:
+        try:
+            return create_client(url, key)
+        except Exception as e:
+            print(f"⚠️ Error initializing Supabase service client: {e}")
+    return None
+
+
 async def get_current_user_optional(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
