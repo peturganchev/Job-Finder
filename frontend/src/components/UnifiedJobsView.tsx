@@ -125,7 +125,7 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
           sources: sourcesToUse,
           keywords: currentKeywords,
           max_jobs: Number(maxJobsPerSource) || 25,
-          clear_new: true, // Clean temporary 'new' jobs so fresh search results replace previous ones without losing saved/applied jobs
+          clear_new: false, // Don't wipe existing jobs so the dashboard stays populated while searching
         },
         authToken
       );
@@ -143,7 +143,13 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
           if (statusRes.status === 'completed' || statusRes.status === 'failed') {
             clearInterval(pollInterval);
             setIsSearching(false);
+            setSearchLog('🎉 Търсенето завърши! Обновяване на списъка с нови позиции...');
+            // Automatic instant refresh
             onRefresh();
+            // Secondary refresh to catch trailing AI evaluations from Supabase
+            setTimeout(() => {
+              onRefresh();
+            }, 1200);
           }
         } catch {
           // If polling fails, gracefully finish

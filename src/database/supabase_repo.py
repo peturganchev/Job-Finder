@@ -267,6 +267,35 @@ class SupabaseRepository:
                     continue
                     
                 jobs.append(self._format_job(job_data))
+            
+            # Автоматичен fallback: ако списъкът на потребителя е празен,
+            # импортираме обяви от общия каталог, за да няма празен екран
+            if not jobs and not status and not min_score and not source:
+                try:
+                    imported = self.import_catalog_jobs_to_user(limit=50)
+                    if imported > 0:
+                        # Повторно извличане след успешен импорт
+                        res_retry = query.order("match_score", desc=True).limit(limit).execute()
+                        for item in res_retry.data:
+                            job_data = item.get("jobs")
+                            if not job_data:
+                                continue
+                            job_data["id"] = item["job_id"]
+                            job_data["status"] = item.get("status", "new")
+                            job_data["match_score"] = item.get("match_score")
+                            job_data["ai_summary"] = item.get("ai_summary")
+                            job_data["matched_skills"] = item.get("matched_skills") or []
+                            job_data["missing_skills"] = item.get("missing_skills") or []
+                            job_data["cover_letter"] = item.get("cover_letter")
+                            jobs.append(self._format_job(job_data))
+                except Exception as imp_err:
+                    print(f"⚠️ Грешка при автоматичен каталог импорт: {imp_err}")
+
+                # Втори fallback към общия каталог jobs
+                if not jobs:
+                    fallback_res = self.client.table("jobs").select("*").order("created_at", desc=True).limit(limit).execute()
+                    return [self._format_job(r) for r in fallback_res.data]
+
             return jobs
         else:
             # Global view if not logged in
