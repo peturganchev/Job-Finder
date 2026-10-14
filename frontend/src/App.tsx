@@ -103,14 +103,31 @@ function AppContent() {
     }
   });
 
-  const [activeSources, setActiveSources] = useState<string[]>([
-    'dev_bg',
-    'jobs_bg',
-    'linkedin',
-    'euremotejobs',
-    'hackernews',
-  ]);
-  const [maxJobsPerSource, setMaxJobsPerSource] = useState<number>(25);
+  const [activeSources, setActiveSources] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('jf_active_sources');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((s: string) => s.replace('.', '_'));
+        }
+      }
+    } catch {}
+    return [
+      'dev_bg',
+      'jobs_bg',
+      'linkedin',
+      'euremotejobs',
+      'hackernews',
+    ];
+  });
+  const [maxJobsPerSource, setMaxJobsPerSource] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('jf_max_jobs_per_source');
+      if (saved) return Number(saved) || 25;
+    } catch {}
+    return 25;
+  });
 
   // Guard: if in simple mode, redirect pro-only tabs to jobs
   useEffect(() => {
@@ -131,10 +148,13 @@ function AppContent() {
         localStorage.setItem('jf_ui_mode', data.ui_mode);
       }
       if (data.active_sources && data.active_sources.length > 0) {
-        setActiveSources(data.active_sources);
+        const normalized = data.active_sources.map((s) => s.replace('.', '_'));
+        setActiveSources(normalized);
+        localStorage.setItem('jf_active_sources', JSON.stringify(normalized));
       }
       if (data.max_jobs_per_source) {
         setMaxJobsPerSource(data.max_jobs_per_source);
+        localStorage.setItem('jf_max_jobs_per_source', String(data.max_jobs_per_source));
       }
     } catch (err) {
       console.error('Failed to load settings in App:', err);
@@ -341,6 +361,10 @@ function AppContent() {
                 onOpenAdmin={() => setIsAdminOpen(true)}
                 uiMode={uiMode}
                 onUIModeChange={(newMode) => setUiMode(newMode)}
+                onSettingsSaved={(newSources, newMaxJobs) => {
+                  setActiveSources(newSources);
+                  setMaxJobsPerSource(newMaxJobs);
+                }}
               />
             )}
           </>
