@@ -73,11 +73,30 @@ export async function apiFetchJobs(
   if (params?.limit) query.append('limit', params.limit.toString());
 
   const url = `${API_BASE_URL}/api/jobs${query.toString() ? `?${query.toString()}` : ''}`;
-  const res = await fetch(url, { headers: getHeaders(token) });
-  if (!res.ok) {
-    throw new Error(`Failed to fetch jobs: ${res.statusText}`);
+  const maxRetries = 2;
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, { headers: getHeaders(token) });
+      if (!res.ok) {
+        if ([502, 503, 504].includes(res.status) && attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        throw new Error(`Failed to fetch jobs: ${res.statusText}`);
+      }
+      return await res.json();
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+    }
   }
-  return res.json();
+
+  throw lastError || new Error('Failed to fetch jobs');
 }
 
 /** Update application status */

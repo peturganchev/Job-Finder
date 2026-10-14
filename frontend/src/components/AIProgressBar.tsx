@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Sparkles, Loader2, CheckCircle2 } from 'lucide-react';
 
 interface AIProgressBarProps {
@@ -23,6 +23,11 @@ export const AIProgressBar: React.FC<AIProgressBarProps> = ({
 }) => {
   const [progress, setProgress] = useState<number>(0);
   const [phaseIndex, setPhaseIndex] = useState<number>(0);
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -31,7 +36,7 @@ export const AIProgressBar: React.FC<AIProgressBarProps> = ({
         const timer = setTimeout(() => {
           setProgress(0);
           setPhaseIndex(0);
-          if (onComplete) onComplete();
+          if (onCompleteRef.current) onCompleteRef.current();
         }, 1200);
         return () => clearTimeout(timer);
       }
@@ -57,7 +62,7 @@ export const AIProgressBar: React.FC<AIProgressBarProps> = ({
       clearInterval(interval);
       clearInterval(phaseInterval);
     };
-  }, [isLoading, onComplete]);
+  }, [isLoading]);
 
   if (!isLoading && progress === 0) return null;
 

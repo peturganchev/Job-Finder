@@ -56,9 +56,18 @@ function AppContent() {
   // Selected Job for Detail Modal
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
-  // Jobs data
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
+  // Jobs data with localStorage persistence
+  const [jobs, setJobs] = useState<Job[]>(() => {
+    try {
+      const saved = localStorage.getItem('jf_cached_jobs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
+  const [loadingJobs, setLoadingJobs] = useState<boolean>(() => jobs.length === 0);
 
   // Market stats data for insights tab
   const [marketStats, setMarketStats] = useState<MarketStats | null>(null);
@@ -72,7 +81,18 @@ function AppContent() {
     setLoadingJobs(true);
     try {
       const data = await apiFetchJobs({}, session?.access_token);
-      setJobs(data.jobs || []);
+      const fetchedJobs = data.jobs || [];
+      if (fetchedJobs.length > 0) {
+        setJobs(fetchedJobs);
+        try {
+          localStorage.setItem('jf_cached_jobs', JSON.stringify(fetchedJobs));
+        } catch {}
+      } else {
+        setJobs([]);
+        try {
+          localStorage.removeItem('jf_cached_jobs');
+        } catch {}
+      }
     } catch (err) {
       console.error('Error fetching jobs:', err);
     } finally {
@@ -175,11 +195,21 @@ function AppContent() {
       loadSettings();
     } else {
       setJobs([]);
+      try {
+        localStorage.removeItem('jf_cached_jobs');
+      } catch {}
       setMarketStats(null);
       setLoadingJobs(false);
       setLoadingStats(false);
     }
   }, [user, loadJobs, loadStats, loadSettings]);
+
+  // Auto-refresh jobs when navigating back to jobs tab
+  useEffect(() => {
+    if (currentTab === 'jobs' && user) {
+      loadJobs();
+    }
+  }, [currentTab, user, loadJobs]);
 
   // Optimistic Job Status Update
   const handleStatusChange = async (jobId: string | number, newStatus: ApplicationStatus) => {
