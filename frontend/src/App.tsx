@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -56,18 +56,9 @@ function AppContent() {
   // Selected Job for Detail Modal
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
-  // Jobs data with localStorage persistence
-  const [jobs, setJobs] = useState<Job[]>(() => {
-    try {
-      const saved = localStorage.getItem('jf_cached_jobs');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [];
-  });
-  const [loadingJobs, setLoadingJobs] = useState<boolean>(() => jobs.length === 0);
+  // Jobs data (always loaded fresh from the API for the signed-in user)
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState<boolean>(true);
 
   // Market stats data for insights tab
   const [marketStats, setMarketStats] = useState<MarketStats | null>(null);
@@ -76,29 +67,29 @@ function AppContent() {
   // FastAPI health check
   const [apiHealthy, setApiHealthy] = useState<boolean>(false);
 
+  // Always use the latest access token without re-creating callbacks on every token refresh
+  const tokenRef = useRef<string | undefined>(session?.access_token);
+  useEffect(() => {
+    tokenRef.current = session?.access_token;
+  }, [session?.access_token]);
+
+  // Monotonic counter: only the most recent jobs request may update the state
+  const jobsRequestId = useRef(0);
+
   // Load jobs from API
   const loadJobs = useCallback(async () => {
+    const requestId = ++jobsRequestId.current;
     setLoadingJobs(true);
     try {
-      const data = await apiFetchJobs({}, session?.access_token);
-      const fetchedJobs = data.jobs || [];
-      if (fetchedJobs.length > 0) {
-        setJobs(fetchedJobs);
-        try {
-          localStorage.setItem('jf_cached_jobs', JSON.stringify(fetchedJobs));
-        } catch {}
-      } else {
-        setJobs([]);
-        try {
-          localStorage.removeItem('jf_cached_jobs');
-        } catch {}
-      }
+      const data = await apiFetchJobs({}, tokenRef.current);
+      if (requestId !== jobsRequestId.current) return; // stale response
+      setJobs(data.jobs || []);
     } catch (err) {
       console.error('Error fetching jobs:', err);
     } finally {
-      setLoadingJobs(false);
+      if (requestId === jobsRequestId.current) setLoadingJobs(false);
     }
-  }, [session]);
+  }, []);
 
   // Load market statistics (with deduplication support)
   const loadStats = useCallback(async (deduplicate: boolean = true) => {
@@ -190,26 +181,23 @@ function AppContent() {
       .catch(() => setApiHealthy(false));
 
     if (user) {
-      loadJobs();
       loadStats();
       loadSettings();
     } else {
       setJobs([]);
-      try {
-        localStorage.removeItem('jf_cached_jobs');
-      } catch {}
       setMarketStats(null);
       setLoadingJobs(false);
       setLoadingStats(false);
     }
-  }, [user, loadJobs, loadStats, loadSettings]);
+  }, [user, loadStats, loadSettings]);
 
-  // Auto-refresh jobs when navigating back to jobs tab
+  // Load jobs on login and auto-refresh whenever the user returns to the jobs tab
+  const userId = user?.id;
   useEffect(() => {
-    if (currentTab === 'jobs' && user) {
+    if (userId && currentTab === 'jobs') {
       loadJobs();
     }
-  }, [currentTab, user, loadJobs]);
+  }, [currentTab, userId, loadJobs]);
 
   // Optimistic Job Status Update
   const handleStatusChange = async (jobId: string | number, newStatus: ApplicationStatus) => {

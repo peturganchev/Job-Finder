@@ -131,40 +131,55 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
       );
 
       const taskId = startRes.task_id;
+      let lastJobsFound = 0;
+      let errorCount = 0;
+      let finished = false;
+      let failsafe: ReturnType<typeof setTimeout> | undefined;
+      let pollInterval: ReturnType<typeof setInterval> | undefined;
+
+      const finish = (message: string) => {
+        if (finished) return;
+        finished = true;
+        if (pollInterval) clearInterval(pollInterval);
+        if (failsafe) clearTimeout(failsafe);
+        setSearchLog(message);
+        setIsSearching(false);
+        // Immediate refresh + a delayed one to catch trailing AI scores
+        onRefresh();
+        setTimeout(() => onRefresh(), 1500);
+      };
 
       // Poll task progress
-      const pollInterval = setInterval(async () => {
+      pollInterval = setInterval(async () => {
         try {
-          const statusRes = await apiGetSearchStatus(taskId);
+          const statusRes = await apiGetSearchStatus(taskId, authToken);
+          errorCount = 0;
           if (statusRes.logs && statusRes.logs.length > 0) {
             setSearchLog(statusRes.logs[statusRes.logs.length - 1]);
           }
 
-          if (statusRes.status === 'completed' || statusRes.status === 'failed') {
-            clearInterval(pollInterval);
-            setIsSearching(false);
-            setSearchLog('🎉 Търсенето завърши! Обновяване на списъка с нови позиции...');
-            // Automatic instant refresh
+          // Stream results into the list while scraping is still running
+          if ((statusRes.jobs_found || 0) > lastJobsFound) {
+            lastJobsFound = statusRes.jobs_found;
             onRefresh();
-            // Secondary refresh to catch trailing AI evaluations from Supabase
-            setTimeout(() => {
-              onRefresh();
-            }, 1200);
+          }
+
+          if (statusRes.status === 'completed') {
+            finish('🎉 Търсенето завърши! Обновяване на списъка с нови позиции...');
+          } else if (statusRes.status === 'failed') {
+            finish(`⚠️ Търсенето приключи с грешка${statusRes.error ? `: ${statusRes.error}` : ''}`);
           }
         } catch {
-          // If polling fails, gracefully finish
-          clearInterval(pollInterval);
-          setIsSearching(false);
-          onRefresh();
+          // Tolerate transient errors (Render cold start / restart); give up after 6 in a row
+          errorCount += 1;
+          if (errorCount >= 6) {
+            finish('⚠️ Загубена връзка със сървъра. Опреснявам наличните обяви...');
+          }
         }
-      }, 1500);
+      }, 2000);
 
-      // Failsafe timeout after 45s
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        setIsSearching(false);
-        onRefresh();
-      }, 45000);
+      // Failsafe timeout (AI scoring on a slow Gemini can take a few minutes)
+      failsafe = setTimeout(() => finish('⏱️ Търсенето отне твърде дълго. Показвам намерените обяви.'), 240000);
     } catch (err: any) {
       console.error('Failed to start search:', err);
       setSearchLog(`⚠️ Грешка: ${err.message || 'Неуспешна заявка'}`);
@@ -191,29 +206,27 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
     return Array.from(set).sort();
   }, [jobs]);
 
-  // Filtered Jobs
-  const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => {
-      // Tags filter (OR matching across title, skills, description)
-      if (tags.length > 0) {
-        const textCorpus = `${job.title} ${job.company} ${job.location} ${(job.matched_skills || []).join(' ')} ${job.description || ''}`.toLowerCase();
-        const matchesTag = tags.some((tag) => {
-          const lowerTag = tag.toLowerCase().trim();
-          if (!lowerTag) return false;
-          if (textCorpus.includes(lowerTag)) return true;
-          const words = lowerTag.split(/\s+/).filter(Boolean);
-          return words.length > 1 && words.every((w) => textCorpus.includes(w));
-        });
-        if (!matchesTag) return false;
-      }
+  // Filtered Jobs (with a safety net: if the tags match nothing, show everything else)
+  const { filteredJobs, tagsIgnored } = useMemo(() => {
+    const matchesTags = (job: Job) => {
+      const textCorpus = `${job.title || ''} ${job.company || ''} ${job.location || ''} ${(job.matched_skills || []).join(' ')} ${job.search_keyword || ''} ${job.description || ''}`.toLowerCase();
+      return tags.some((tag) => {
+        const lowerTag = tag.toLowerCase().trim();
+        if (!lowerTag) return false;
+        if (textCorpus.includes(lowerTag)) return true;
+        const words = lowerTag.split(/\s+/).filter(Boolean);
+        return words.length > 1 && words.every((w) => textCorpus.includes(w));
+      });
+    };
 
+    const passesOtherFilters = (job: Job) => {
       // Input value realtime filter
       if (inputValue.trim()) {
         const query = inputValue.toLowerCase().trim();
         const matchesInput =
-          job.title.toLowerCase().includes(query) ||
-          job.company.toLowerCase().includes(query) ||
-          job.location.toLowerCase().includes(query);
+          (job.title || '').toLowerCase().includes(query) ||
+          (job.company || '').toLowerCase().includes(query) ||
+          (job.location || '').toLowerCase().includes(query);
         if (!matchesInput) return false;
       }
 
@@ -250,7 +263,16 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
       }
 
       return true;
-    });
+    };
+
+    const base = jobs.filter(passesOtherFilters);
+    if (tags.length === 0) return { filteredJobs: base, tagsIgnored: false };
+
+    const tagged = base.filter(matchesTags);
+    if (tagged.length === 0 && base.length > 0) {
+      return { filteredJobs: base, tagsIgnored: true };
+    }
+    return { filteredJobs: tagged, tagsIgnored: false };
   }, [jobs, tags, inputValue, onlyRemote, onlyWithSalary, sourceFilter, categoryFilter, minScoreFilter]);
 
   return (
@@ -455,6 +477,12 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
           </button>
         )}
       </div>
+
+      {tagsIgnored && (
+        <div className="px-3 py-2 rounded-lg text-xs bg-amber-500/10 border border-amber-500/30 text-amber-200">
+          Няма обяви, съдържащи точно тези ключови думи — показвам всички налични обяви.
+        </div>
+      )}
 
       {/* Clean Vertical Job List */}
       {filteredJobs.length > 0 ? (
