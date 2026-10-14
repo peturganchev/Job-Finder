@@ -7,9 +7,16 @@ import random
 import re
 from typing import List, Dict, Any
 from urllib.parse import quote, quote_plus
+import sys
 from bs4 import BeautifulSoup
 from src.scrapers.base_scraper import BaseScraper
 from src.database.models import Job, JobSource, ApplicationStatus
+
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 
 class JobsBgScraper(BaseScraper):
@@ -47,7 +54,15 @@ class JobsBgScraper(BaseScraper):
                 if is_cf:
                     self.last_error = "Засечена Cloudflare Turnstile проверка"
                 elif is_dd_blocked:
-                    self.last_error = "Засечена DataDome CAPTCHA защита (HTTP 403 от Cloud Datacenter IP)"
+                    self.last_error = "Засечена DataDome CAPTCHA защита"
+
+                if is_cf or is_dd_blocked:
+                    from src.utils.desktop_notifier import notify_desktop
+                    notify_desktop("Job-Finder: Валидация", "Моля плъзнете слайдера в отворения браузър за Jobs.bg!")
+                    try:
+                        self.page.bring_to_front()
+                    except Exception:
+                        pass
                 else:
                     # Страницата не показва блок екран (може още да рендерира или да е празен списък)
                     if "jobs.bg" in title.lower() or "обяви" in title.lower():

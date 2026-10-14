@@ -7,14 +7,15 @@ import { AuthModal } from './components/AuthModal';
 import { WaitlistModal } from './components/WaitlistModal';
 import { WaitlistAdminModal } from './components/WaitlistAdminModal';
 import { JobsListView } from './components/JobsListView';
+import { UnifiedJobsView } from './components/UnifiedJobsView';
 import { JobDetailModal } from './components/JobDetailModal';
 import { SearchView } from './components/SearchView';
 import { ProfileView } from './components/ProfileView';
 import { InsightsView } from './components/InsightsView';
 import { SettingsView } from './components/SettingsView';
 import { RoadmapPortfolioView } from './components/RoadmapPortfolioView';
-import { apiFetchJobs, apiUpdateJobStatus, apiDeleteJob, apiFetchMarketStats } from './lib/api';
-import type { Job, ApplicationStatus, MarketStats } from './types';
+import { apiFetchJobs, apiUpdateJobStatus, apiDeleteJob, apiFetchMarketStats, apiGetSettings } from './lib/api';
+import type { Job, ApplicationStatus, MarketStats, UIMode } from './types';
 import { API_BASE_URL } from './lib/supabase';
 import { Sparkles, Lock, LogIn, Cpu } from 'lucide-react';
 
@@ -92,6 +93,54 @@ function AppContent() {
     }
   }, [session]);
 
+  // UI Mode (Simple vs Pro)
+  const [uiMode, setUiMode] = useState<UIMode>(() => {
+    try {
+      const saved = localStorage.getItem('jf_ui_mode');
+      return saved === 'pro' ? 'pro' : 'simple';
+    } catch {
+      return 'simple';
+    }
+  });
+
+  const [activeSources, setActiveSources] = useState<string[]>([
+    'dev_bg',
+    'jobs_bg',
+    'linkedin',
+    'euremotejobs',
+    'hackernews',
+  ]);
+  const [maxJobsPerSource, setMaxJobsPerSource] = useState<number>(25);
+
+  // Guard: if in simple mode, redirect pro-only tabs to jobs
+  useEffect(() => {
+    if (uiMode === 'simple') {
+      const proOnlyTabs = ['search', 'roadmap', 'insights'];
+      if (proOnlyTabs.includes(currentTab)) {
+        setCurrentTab('jobs');
+      }
+    }
+  }, [uiMode, currentTab]);
+
+  // Load settings on login to sync UI Mode, Sources, and Limits
+  const loadSettings = useCallback(async () => {
+    try {
+      const data = await apiGetSettings(session?.access_token);
+      if (data.ui_mode) {
+        setUiMode(data.ui_mode);
+        localStorage.setItem('jf_ui_mode', data.ui_mode);
+      }
+      if (data.active_sources && data.active_sources.length > 0) {
+        setActiveSources(data.active_sources);
+      }
+      if (data.max_jobs_per_source) {
+        setMaxJobsPerSource(data.max_jobs_per_source);
+      }
+    } catch (err) {
+      console.error('Failed to load settings in App:', err);
+    }
+  }, [session]);
+
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/health`)
       .then((res) => res.json())
@@ -103,13 +152,14 @@ function AppContent() {
     if (user) {
       loadJobs();
       loadStats();
+      loadSettings();
     } else {
       setJobs([]);
       setMarketStats(null);
       setLoadingJobs(false);
       setLoadingStats(false);
     }
-  }, [user, loadJobs, loadStats]);
+  }, [user, loadJobs, loadStats, loadSettings]);
 
   // Optimistic Job Status Update
   const handleStatusChange = async (jobId: string | number, newStatus: ApplicationStatus) => {
@@ -165,6 +215,7 @@ function AppContent() {
         onOpenWaitlist={() => setIsWaitlistOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
         apiHealthy={apiHealthy}
+        uiMode={uiMode}
       />
 
       {/* Main View Container */}
@@ -229,19 +280,32 @@ function AppContent() {
           </div>
         ) : (
           <>
-            {/* Tab 1: Jobs & Kanban Dashboard */}
+            {/* Tab 1: Jobs & Unified / Kanban Dashboard */}
             {currentTab === 'jobs' && (
-              <JobsListView
-                jobs={jobs}
-                loading={loadingJobs}
-                onRefresh={loadJobs}
-                onSelectJob={(j) => setSelectedJob(j)}
-                onStatusChange={handleStatusChange}
-              />
+              uiMode === 'simple' ? (
+                <UnifiedJobsView
+                  jobs={jobs}
+                  loading={loadingJobs}
+                  onRefresh={loadJobs}
+                  onSelectJob={(j) => setSelectedJob(j)}
+                  onStatusChange={handleStatusChange}
+                  authToken={session?.access_token}
+                  activeSources={activeSources}
+                  maxJobsPerSource={maxJobsPerSource}
+                />
+              ) : (
+                <JobsListView
+                  jobs={jobs}
+                  loading={loadingJobs}
+                  onRefresh={loadJobs}
+                  onSelectJob={(j) => setSelectedJob(j)}
+                  onStatusChange={handleStatusChange}
+                />
+              )
             )}
 
-            {/* Tab 2: Autonomous Scraper & Search */}
-            {currentTab === 'search' && (
+            {/* Tab 2: Autonomous Scraper & Search (Pro Mode only) */}
+            {currentTab === 'search' && uiMode === 'pro' && (
               <SearchView
                 onViewJobs={() => {
                   setCurrentTab('jobs');
@@ -251,8 +315,8 @@ function AppContent() {
               />
             )}
 
-            {/* Tab 3: Skill Roadmap & Portfolio */}
-            {currentTab === 'roadmap' && (
+            {/* Tab 3: Skill Roadmap & Portfolio (Pro Mode only) */}
+            {currentTab === 'roadmap' && uiMode === 'pro' && (
               <RoadmapPortfolioView />
             )}
 
@@ -261,8 +325,8 @@ function AppContent() {
               <ProfileView />
             )}
 
-            {/* Tab 5: Market Insights & Analytics */}
-            {currentTab === 'insights' && (
+            {/* Tab 5: Market Insights & Analytics (Pro Mode only) */}
+            {currentTab === 'insights' && uiMode === 'pro' && (
               <InsightsView
                 stats={marketStats}
                 jobs={jobs}
@@ -273,7 +337,11 @@ function AppContent() {
 
             {/* Tab 6: System Settings & Gemini BYOK */}
             {currentTab === 'settings' && (
-              <SettingsView onOpenAdmin={() => setIsAdminOpen(true)} />
+              <SettingsView
+                onOpenAdmin={() => setIsAdminOpen(true)}
+                uiMode={uiMode}
+                onUIModeChange={(newMode) => setUiMode(newMode)}
+              />
             )}
           </>
         )}
@@ -285,6 +353,7 @@ function AppContent() {
           currentTab={currentTab}
           onSelectTab={setCurrentTab}
           jobsCount={jobs.length}
+          uiMode={uiMode}
         />
       )}
 

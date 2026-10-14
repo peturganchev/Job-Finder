@@ -17,6 +17,7 @@ interface NavbarProps {
   onOpenWaitlist: () => void;
   onOpenAdmin: () => void;
   apiHealthy: boolean;
+  uiMode?: 'simple' | 'pro';
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -26,17 +27,24 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWaitlist,
   onOpenAdmin,
   apiHealthy,
+  uiMode = 'simple',
 }) => {
   const { user, signOut, isWaitlistAdmin } = useAuth();
 
-  const navItems = [
-    { id: 'jobs', label: 'Обяви & Табло' },
-    { id: 'search', label: 'Търсене & Скрапване' },
-    { id: 'roadmap', label: 'План & Портфолио' },
-    { id: 'profile', label: 'CV & Профил' },
-    { id: 'insights', label: 'Пазарен Анализ' },
-    { id: 'settings', label: 'Настройки' },
-  ];
+  const navItems = uiMode === 'simple'
+    ? [
+        { id: 'jobs', label: '📋 Обяви & Търсене' },
+        { id: 'profile', label: '👤 CV & Профил' },
+        { id: 'settings', label: '⚙️ Настройки' },
+      ]
+    : [
+        { id: 'jobs', label: 'Обяви & Табло' },
+        { id: 'search', label: 'Търсене & Скрапване' },
+        { id: 'roadmap', label: 'План & Портфолио' },
+        { id: 'profile', label: 'CV & Профил' },
+        { id: 'insights', label: 'Пазарен Анализ' },
+        { id: 'settings', label: 'Настройки' },
+      ];
 
   return (
     <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40 px-6 py-3.5">

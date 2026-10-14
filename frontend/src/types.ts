@@ -51,3 +51,23 @@ export interface MarketStats {
   by_source: Record<string, number>;
   top_skills: MarketSkillItem[];
 }
+
+export type UIMode = 'simple' | 'pro';
+export type UITheme = 'dark' | 'light';
+
+export interface UserSettings {
+  gemini_api_key_masked?: string | null;
+  gemini_model?: string;
+  available_models?: string[];
+  blacklist_title?: string[];
+  blacklist_companies?: string[];
+  search_keywords?: string[];
+  active_sources?: string[];
+  max_jobs_per_source?: number;
+  location?: string;
+  remote_location?: string;
+  roadmap_progress?: Record<string, any>;
+  ui_mode?: UIMode;
+  theme?: UITheme;
+}
+

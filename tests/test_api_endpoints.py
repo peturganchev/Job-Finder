@@ -206,13 +206,21 @@ def test_settings_flow():
     assert "gemini_model" in data
     assert "blacklist_title" in data
     assert "search_keywords" in data
-    print(f"✅ GET /api/settings passed (Model: {data['gemini_model']}, Titles in blacklist: {len(data['blacklist_title'])})")
+    assert "ui_mode" in data
+    assert "theme" in data
+    assert "max_jobs_per_source" in data
+    print(f"✅ GET /api/settings passed (UI Mode: {data['ui_mode']}, Theme: {data['theme']}, Max Jobs: {data['max_jobs_per_source']})")
 
     # 2. POST /api/settings
-    update_res = client.post("/api/settings", json={"location": "Sofia, Bulgaria"})
+    update_res = client.post("/api/settings", json={
+        "location": "Sofia, Bulgaria",
+        "ui_mode": "simple",
+        "theme": "dark",
+        "max_jobs_per_source": 25,
+    })
     assert update_res.status_code == 200
     assert update_res.json()["success"] is True
-    print("✅ POST /api/settings passed")
+    print("✅ POST /api/settings passed (Updated ui_mode=simple, max_jobs=25)")
 
     # 3. POST /api/settings/verify-gemini
     verify_res = client.post("/api/settings/verify-gemini", json={"api_key": "invalid_test_key"})

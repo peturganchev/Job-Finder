@@ -91,6 +91,10 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
         or {}
     )
 
+    ui_mode = db_settings.get("ui_mode") or "simple"
+    theme = db_settings.get("theme") or "dark"
+    max_jobs = db_settings.get("max_jobs_per_source") or local_settings.search.max_jobs_per_source or 25
+
     return SettingsResponse(
         gemini_api_key_masked=_mask_key(raw_api_key),
         gemini_model=gemini_model,
@@ -99,10 +103,12 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
         blacklist_companies=blacklist_companies,
         search_keywords=search_keywords,
         active_sources=active_sources,
-        max_jobs_per_source=local_settings.search.max_jobs_per_source,
+        max_jobs_per_source=max_jobs,
         location=local_settings.search.location,
         remote_location=local_settings.search.remote_location,
         roadmap_progress=roadmap_progress,
+        ui_mode=ui_mode,
+        theme=theme,
     )
 
 
@@ -134,6 +140,9 @@ def update_settings(
         local_settings.search.remote_location = req.remote_location.strip()
     if req.roadmap_progress is not None:
         local_settings.roadmap_progress = req.roadmap_progress
+    if req.active_sources is not None:
+        for src in ["dev_bg", "jobs_bg", "linkedin", "euremotejobs", "hackernews"]:
+            setattr(local_settings.sources, src, src in req.active_sources)
 
     sm.save(local_settings)
 
@@ -160,10 +169,28 @@ def update_settings(
                 update_payload["keywords"] = [k.strip() for k in req.search_keywords if k.strip()]
             if req.roadmap_progress is not None:
                 update_payload["roadmap_progress"] = req.roadmap_progress
+            if req.ui_mode is not None:
+                update_payload["ui_mode"] = req.ui_mode
+            if req.theme is not None:
+                update_payload["theme"] = req.theme
+            if req.max_jobs_per_source is not None:
+                update_payload["max_jobs_per_source"] = req.max_jobs_per_source
+            if req.active_sources is not None:
+                update_payload["sources"] = {
+                    src: (src in req.active_sources)
+                    for src in ["dev_bg", "jobs_bg", "linkedin", "euremotejobs", "hackernews"]
+                }
 
-            res = client.table("user_settings").upsert(update_payload, on_conflict="user_id").execute()
-            if not res.data:
-                print(f"⚠️ Warning: user_settings upsert returned empty data for user {user_id}")
+            try:
+                res = client.table("user_settings").upsert(update_payload, on_conflict="user_id").execute()
+            except Exception as upsert_err:
+                err_str = str(upsert_err).lower()
+                # If column doesn't exist yet in table schema, retry without the new columns
+                if "column" in err_str and "does not exist" in err_str:
+                    fallback_payload = {k: v for k, v in update_payload.items() if k not in ["ui_mode", "theme", "max_jobs_per_source"]}
+                    client.table("user_settings").upsert(fallback_payload, on_conflict="user_id").execute()
+                else:
+                    raise upsert_err
         except Exception as e:
             print(f"⚠️ Error updating Supabase user_settings: {e}")
 

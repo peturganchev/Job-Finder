@@ -16,12 +16,17 @@ import {
   Plus,
   X,
   Sliders,
+  Globe,
+  Zap,
+  Rocket,
 } from 'lucide-react';
 import { apiGetSettings, apiUpdateSettings, apiVerifyGeminiKey, type SettingsData } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
 interface SettingsViewProps {
   onOpenAdmin: () => void;
+  uiMode?: 'simple' | 'pro';
+  onUIModeChange?: (mode: 'simple' | 'pro') => void;
 }
 
 const DEFAULT_BLACKLIST_TITLES = [
@@ -40,13 +45,28 @@ const DEFAULT_BLACKLIST_TITLES = [
   'Manual QA',
 ];
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode, onUIModeChange }) => {
   const { session, isWaitlistAdmin } = useAuth();
 
   // Settings State
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // UI Mode & Theme
+  const [currentUIMode, setCurrentUIMode] = useState<'simple' | 'pro'>(() => {
+    return uiMode || (localStorage.getItem('jf_ui_mode') as 'simple' | 'pro') || 'simple';
+  });
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  // Active Sources
+  const [activeSources, setActiveSources] = useState<string[]>([
+    'dev_bg',
+    'jobs_bg',
+    'linkedin',
+    'euremotejobs',
+    'hackernews',
+  ]);
 
   // Gemini state
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
@@ -75,13 +95,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin }) => {
   // Search defaults
   const [location, setLocation] = useState<string>('Bulgaria');
   const [remoteLocation, setRemoteLocation] = useState<string>('Worldwide');
-  const [maxJobsPerSource, setMaxJobsPerSource] = useState<number>(15);
+  const [maxJobsPerSource, setMaxJobsPerSource] = useState<number>(25);
 
   // Load settings on mount
   useEffect(() => {
     setLoading(true);
     apiGetSettings(session?.access_token)
       .then((data: SettingsData) => {
+        if (data.ui_mode) {
+          setCurrentUIMode(data.ui_mode);
+          localStorage.setItem('jf_ui_mode', data.ui_mode);
+        }
+        if (data.theme) {
+          setTheme(data.theme);
+        }
+        if (data.active_sources && data.active_sources.length > 0) {
+          setActiveSources(data.active_sources);
+        }
         if (data.gemini_api_key_masked) {
           setMaskedKey(data.gemini_api_key_masked);
         }
@@ -178,6 +208,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin }) => {
         location?: string;
         remote_location?: string;
         max_jobs_per_source?: number;
+        ui_mode?: 'simple' | 'pro';
+        theme?: 'dark' | 'light';
+        active_sources?: string[];
       } = {
         gemini_model: selectedModel,
         blacklist_title: blacklistTitles,
@@ -185,10 +218,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin }) => {
         location,
         remote_location: remoteLocation,
         max_jobs_per_source: maxJobsPerSource,
+        ui_mode: currentUIMode,
+        theme,
+        active_sources: activeSources,
       };
 
       if (apiKeyInput.trim()) {
         payload.gemini_api_key = apiKeyInput.trim();
+      }
+
+      // Save UI mode to local storage immediately
+      localStorage.setItem('jf_ui_mode', currentUIMode);
+      localStorage.setItem('jf_theme', theme);
+      if (onUIModeChange) {
+        onUIModeChange(currentUIMode);
       }
 
       const res = await apiUpdateSettings(payload, session?.access_token);
@@ -292,6 +335,134 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin }) => {
           </button>
         </div>
       )}
+
+      {/* UI Mode Selection Card */}
+      <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-5">
+        <div className="flex items-center gap-2.5">
+          <Sliders className="w-5 h-5 text-blue-400" />
+          <div>
+            <h3 className="text-sm font-bold text-white">Режим на Интерфейса (UI Experience)</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Изберете между олекотен работен изглед или пълен аналитичен център
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Simple Mode Option */}
+          <div
+            onClick={() => setCurrentUIMode('simple')}
+            className={`p-5 rounded-xl border cursor-pointer transition-all ${
+              currentUIMode === 'simple'
+                ? 'bg-blue-600/15 border-blue-500/60 shadow-lg shadow-blue-500/10'
+                : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 opacity-75'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Zap className="w-4 h-4 text-blue-400" />
+                <span>⚡ Опростен режим</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                Препоръчителен
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Обединен екран за Търсене &amp; Обяви с интелигентни тагове, чист вертикален списък и AI Progress Bar. Скрива аналитичните табове за максимална бързина и фокус.
+            </p>
+          </div>
+
+          {/* Pro Mode Option */}
+          <div
+            onClick={() => setCurrentUIMode('pro')}
+            className={`p-5 rounded-xl border cursor-pointer transition-all ${
+              currentUIMode === 'pro'
+                ? 'bg-indigo-600/15 border-indigo-500/60 shadow-lg shadow-indigo-500/10'
+                : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 opacity-75'
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Rocket className="w-4 h-4 text-indigo-400" />
+                <span>🚀 Професионален режим</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                Пълен стек
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Всички 6 екрана: Kanban табло с drag-and-drop статуси, търсачка с жив терминал за логове, подробен пазарен анализ и кариерен роудмап.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Global Platforms & Limits Card */}
+      <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-6">
+        <div className="flex items-center gap-2.5">
+          <Globe className="w-5 h-5 text-teal-400" />
+          <div>
+            <h3 className="text-sm font-bold text-white">Платформи за Търсене &amp; Лимити</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Настройте източниците, които се сканират при търсене, и броя обяви от всяко място
+            </p>
+          </div>
+        </div>
+
+        {/* Platforms Checkboxes */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {[
+            { id: 'dev_bg', label: 'DEV.BG' },
+            { id: 'jobs_bg', label: 'JOBS.BG' },
+            { id: 'linkedin', label: 'LinkedIn' },
+            { id: 'euremotejobs', label: 'EU Remote Jobs' },
+            { id: 'hackernews', label: 'Hacker News' },
+          ].map((platform) => {
+            const isChecked = activeSources.includes(platform.id);
+            return (
+              <label
+                key={platform.id}
+                className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
+                  isChecked
+                    ? 'bg-teal-500/10 border-teal-500/30 text-white'
+                    : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => {
+                    if (isChecked) {
+                      setActiveSources(activeSources.filter((s) => s !== platform.id));
+                    } else {
+                      setActiveSources([...activeSources, platform.id]);
+                    }
+                  }}
+                  className="rounded bg-slate-900 border-slate-700 text-teal-500 focus:ring-0"
+                />
+                <span className="text-xs font-semibold">{platform.label}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        {/* Limit Dropdown */}
+        <div className="pt-2 border-t border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <span className="block text-xs font-medium text-slate-300">Лимит обяви на платформа</span>
+            <span className="text-[11px] text-slate-500">Колко обяви максимално да извлича скраперът от всеки сайт</span>
+          </div>
+          <select
+            value={maxJobsPerSource}
+            onChange={(e) => setMaxJobsPerSource(Number(e.target.value))}
+            className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-teal-500 transition min-w-[160px]"
+          >
+            <option value={25}>25 позиции (Препоръчително)</option>
+            <option value={50}>50 позиции</option>
+            <option value={100}>100 позиции (Максимум)</option>
+          </select>
+        </div>
+      </div>
 
       {/* Gemini AI Settings Card */}
       <div className="p-6 sm:p-8 rounded-2xl bg-slate-900/40 border border-slate-800/80 space-y-6">
