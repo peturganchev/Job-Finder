@@ -120,6 +120,14 @@ def execute_search_job(
     else:
         active_sources = sm.enabled_sources()
 
+    # Normalize sources to set for universal matching (supports both 'dev.bg' and 'dev_bg', etc.)
+    normalized_sources = set()
+    for s in active_sources:
+        s_clean = str(s).strip().lower()
+        normalized_sources.add(s_clean)
+        normalized_sources.add(s_clean.replace(".", "_"))
+        normalized_sources.add(s_clean.replace("_", "."))
+
     _update_task(
         task_id,
         progress=10,
@@ -131,35 +139,37 @@ def execute_search_job(
     browser_mgr = BrowserManager(headless=True)
     page = None
     try:
-        if any(s in active_sources for s in ["jobs.bg", "himalayas"]):
+        if any(s in normalized_sources for s in ["himalayas"]):
             _playwright, _context, page = browser_mgr.launch_session(headless=True)
     except Exception as e:
         _update_task(task_id, log_msg=f"⚠️ Браузърът не е наличен: {e}. Продължаваме в HTTP режим.", user_id=user_id)
 
     # Scrapers (Live scraping for external portals)
     scrapers = []
-    if "dev.bg" in active_sources:
+    if "dev.bg" in normalized_sources or "dev_bg" in normalized_sources:
         scrapers.append(DevBgScraper(page))
-    if "linkedin" in active_sources:
+    if "linkedin" in normalized_sources:
         scrapers.append(LinkedInScraper(page))
-    if "euremotejobs" in active_sources:
+    if "euremotejobs" in normalized_sources or "eu_remote_jobs" in normalized_sources:
         scrapers.append(EURemoteJobsScraper(page))
-    if "hackernews" in active_sources:
+    if "hackernews" in normalized_sources or "hacker_news" in normalized_sources:
         scrapers.append(HackerNewsScraper(page))
-    if "himalayas" in active_sources and page is not None:
+    if "himalayas" in normalized_sources and page is not None:
         scrapers.append(HimalayasScraper(page))
 
     new_jobs = []
     total_found = 0
 
     # 1. Търсене в каталога на Jobs.bg (ако е избран)
-    if "jobs.bg" in active_sources:
+    if "jobs.bg" in normalized_sources or "jobs_bg" in normalized_sources:
         _update_task(task_id, log_msg="🔍 Търсене в каталога на jobs.bg...", user_id=user_id)
         try:
-            bg_jobs = repo.search_jobs_bg(keywords=keywords, limit=max_jobs)
+            bg_jobs = repo.search_jobs_bg(keywords=keywords, limit=max_jobs * 2)
             bg_added = 0
             bg_skipped = 0
             for job in bg_jobs:
+                if bg_added >= max_jobs:
+                    break
                 if repo.user_has_job(job.url):
                     bg_skipped += 1
                     continue

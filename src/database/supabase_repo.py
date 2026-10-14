@@ -495,33 +495,32 @@ class SupabaseRepository:
 
     def search_jobs_bg(self, keywords: Optional[List[str]] = None, category: Optional[str] = None, limit: int = 25) -> List[Job]:
         """
-        Търси активни позиции в глобалния каталог jobs_bg.
+        Търси активни позиции в глобалния каталог jobs_bg с директни PostgreSQL PostgREST филтри.
         """
         try:
             query = self.client.table("jobs_bg").select("*").eq("is_active", True)
             if category:
                 query = query.ilike("category", f"%{category}%")
 
-            # Взимаме последните обяви
-            res = query.order("created_at", desc=True).limit(limit * 3).execute()
-            rows = res.data or []
-
-            # Филтриране по ключови думи (ако са зададени)
-            matched_rows = []
             if keywords:
-                lower_kws = [k.lower() for k in keywords if k]
-                for row in rows:
-                    text_corpus = f"{row.get('title', '')} {row.get('description', '')} {' '.join(row.get('skills', []))}".lower()
-                    if any(kw in text_corpus for kw in lower_kws):
-                        matched_rows.append(row)
-                        if len(matched_rows) >= limit:
-                            break
-            else:
-                matched_rows = rows[:limit]
+                conditions = []
+                for kw in keywords:
+                    if not kw:
+                        continue
+                    clean = kw.replace(",", " ").replace('"', "").replace("'", "").replace("%", "").strip()
+                    if clean:
+                        # Full-text websearch respects word boundaries (e.g. 'AI' won't match 'email' or 'training')
+                        conditions.append(f"title.wfts.{clean}")
+                        conditions.append(f"description.wfts.{clean}")
+                if conditions:
+                    query = query.or_(",".join(conditions))
+
+            res = query.order("created_at", desc=True).limit(limit).execute()
+            rows = res.data or []
 
             # Превръщаме в списък от Job обекти
             results = []
-            for r in matched_rows:
+            for r in rows:
                 job = Job(
                     source=JobSource.JOBS_BG,
                     job_id=str(r.get("job_id") or r.get("id")),
