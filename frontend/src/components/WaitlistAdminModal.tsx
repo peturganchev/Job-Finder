@@ -77,7 +77,7 @@ export const WaitlistAdminModal: React.FC<WaitlistAdminModalProps> = ({ isOpen, 
   };
 
   const getInviteUrl = (email: string) => {
-    return `https://job-finder.archevyn.dev/#register?email=${encodeURIComponent(email)}`;
+    return `https://job-finder.archevyn.dev/?register=true&email=${encodeURIComponent(email)}`;
   };
 
   const handleCopyInvite = (req: WaitlistRequestItem) => {

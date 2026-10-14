@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Lock, Mail, Loader2, AlertCircle, CheckCircle2, UserPlus, LogIn, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import { apiCheckWaitlist } from '../lib/api';
 
 interface AuthModalProps {
@@ -18,7 +19,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   initialMode = 'signin',
   prefilledEmail = '',
 }) => {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, session } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
   const [email, setEmail] = useState(prefilledEmail);
   const [password, setPassword] = useState('');
@@ -69,7 +70,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (error) throw error;
         onClose();
       } else {
-        // 1. Whitelist Verification
+        // 1. If user already authenticated via Supabase invite token redirect, simply set password
+        if (session?.user) {
+          const { error: updateErr } = await supabase.auth.updateUser({ password });
+          if (updateErr) throw updateErr;
+          setSuccessMsg('🎉 Паролата е зададена успешно! Влизане в таблото...');
+          setTimeout(() => {
+            onClose();
+            window.location.href = window.location.origin + '/#jobs';
+          }, 800);
+          return;
+        }
+
+        // 2. Whitelist Verification
         const check = await apiCheckWaitlist(cleanEmail);
         if (!check.allowed) {
           setIsWaitlistBlocked(true);
@@ -78,25 +91,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           return;
         }
 
-        // 2. Perform Supabase Sign Up
-        const { error } = await signUp(cleanEmail, password);
-        if (error) throw error;
-
-        // 3. Immediately auto-signin so the user lands straight inside the dashboard!
-        const { error: signInErr } = await signIn(cleanEmail, password);
-        if (!signInErr) {
-          setSuccessMsg('Добре дошли! Влизане в таблото...');
-          setTimeout(() => {
-            onClose();
-            // Clean hash if was on register
-            if (window.location.hash.startsWith('#register')) {
-              window.location.hash = 'jobs';
+        // 3. Perform Supabase Sign Up or Set Password
+        const { error: signUpError } = await signUp(cleanEmail, password);
+        if (signUpError) {
+          const errMsg = signUpError.message?.toLowerCase() || '';
+          if (errMsg.includes('already') || errMsg.includes('registered')) {
+            // User was invited via Supabase invite_user_by_email, try signing in or updating password
+            const { error: signInErr } = await signIn(cleanEmail, password);
+            if (signInErr) {
+              // Try updating user password directly
+              const { error: updateErr } = await supabase.auth.updateUser({ password });
+              if (updateErr) throw signUpError;
             }
-          }, 600);
+          } else {
+            throw signUpError;
+          }
         } else {
-          setSuccessMsg('Регистрацията е успешна! Можете да влезете в профила си.');
-          setMode('signin');
+          // Immediately auto-signin so the user lands straight inside the dashboard
+          const { error: signInErr } = await signIn(cleanEmail, password);
+          if (signInErr) {
+            setSuccessMsg('Регистрацията е успешна! Можете да влезете в профила си.');
+            setMode('signin');
+            return;
+          }
         }
+
+        setSuccessMsg('🎉 Добре дошли! Влизане в таблото...');
+        setTimeout(() => {
+          onClose();
+          window.location.href = window.location.origin + '/#jobs';
+        }, 800);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Грешка при автентикация.';
@@ -147,7 +171,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             }`}
           >
             <UserPlus className="w-4 h-4" />
-            <span>Регистрация</span>
+            <span>Регистрация & Парола</span>
             {mode === 'signup' && (
               <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-emerald-400 rounded-t-full" />
             )}
@@ -190,9 +214,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Имейл адрес
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-medium text-slate-300">
+                Имейл адрес
+              </label>
+              {prefilledEmail && mode === 'signup' && (
+                <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Одобрен за достъп
+                </span>
+              )}
+            </div>
             <div className="relative">
               <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
               <input
@@ -201,14 +232,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="developer@example.com"
-                className="w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition"
+                className={`w-full pl-10 pr-3.5 py-2.5 rounded-xl bg-slate-950 border text-white placeholder-slate-500 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition ${
+                  prefilledEmail && mode === 'signup'
+                    ? 'border-emerald-500/50 bg-emerald-950/20 text-emerald-200'
+                    : 'border-slate-800'
+                }`}
               />
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Парола
+              {mode === 'signup' ? 'Създай парола' : 'Парола'}
             </label>
             <div className="relative">
               <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
@@ -255,7 +290,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             ) : mode === 'signin' ? (
               <span>Вход</span>
             ) : (
-              <span>Регистрация</span>
+              <span>Завърши регистрацията и задай парола →</span>
             )}
           </button>
         </form>

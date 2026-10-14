@@ -22,16 +22,60 @@ import { Sparkles, Lock, LogIn, Cpu } from 'lucide-react';
 
 function AppContent() {
   const { user, session, loading: authLoading } = useAuth();
+
+  // 1. Detect if the user arrived via registration/invite link (?register=true, #register, or #type=invite)
+  const initialInvite = (() => {
+    try {
+      const search = window.location.search || '';
+      const hash = window.location.hash || '';
+
+      // Check search query (e.g. ?register=true&email=...)
+      if (search.includes('register') || search.includes('email=')) {
+        const params = new URLSearchParams(search);
+        return {
+          isInvite: true,
+          email: params.get('email') || '',
+          mode: 'signup' as const,
+        };
+      }
+
+      // Check hash (e.g. #register?email=... or #register)
+      if (hash.startsWith('#register')) {
+        const queryPart = hash.includes('?') ? hash.split('?')[1] : '';
+        const params = new URLSearchParams(queryPart);
+        return {
+          isInvite: true,
+          email: params.get('email') || '',
+          mode: 'signup' as const,
+        };
+      }
+
+      // Check Supabase invite/recovery token (e.g. #type=invite or #type=recovery)
+      if (hash.includes('type=invite') || hash.includes('type=recovery')) {
+        return {
+          isInvite: true,
+          email: '',
+          mode: 'signup' as const,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    return { isInvite: false, email: '', mode: 'signin' as const };
+  })();
+
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
-      const hash = window.location.hash.replace('#', '');
-      const validTabs = ['jobs', 'search', 'roadmap', 'profile', 'insights', 'settings'];
-      if (hash && validTabs.includes(hash)) {
-        return hash;
-      }
-      const saved = localStorage.getItem('jobfinder_active_tab');
-      if (saved && validTabs.includes(saved)) {
-        return saved;
+      if (!initialInvite.isInvite) {
+        const hash = window.location.hash.replace('#', '');
+        const validTabs = ['jobs', 'search', 'roadmap', 'profile', 'insights', 'settings'];
+        if (hash && validTabs.includes(hash)) {
+          return hash;
+        }
+        const saved = localStorage.getItem('jobfinder_active_tab');
+        if (saved && validTabs.includes(saved)) {
+          return saved;
+        }
       }
     } catch {
       // ignore
@@ -41,50 +85,21 @@ function AppContent() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('jobfinder_active_tab', currentTab);
-      window.location.hash = currentTab;
+      if (!initialInvite.isInvite) {
+        localStorage.setItem('jobfinder_active_tab', currentTab);
+        window.location.hash = currentTab;
+      }
     } catch {
       // ignore
     }
-  }, [currentTab]);
+  }, [currentTab, initialInvite.isInvite]);
 
-  // Modals state
-  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
-  const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
-  const [authModalEmail, setAuthModalEmail] = useState<string>('');
+  // Modals state initialized directly from URL!
+  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(initialInvite.isInvite);
+  const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>(initialInvite.mode);
+  const [authModalEmail, setAuthModalEmail] = useState<string>(initialInvite.email ? decodeURIComponent(initialInvite.email) : '');
   const [isWaitlistOpen, setIsWaitlistOpen] = useState<boolean>(false);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
-
-  // Check URL hash / query on mount for invite links (e.g. #register?email=...)
-  useEffect(() => {
-    try {
-      const hash = window.location.hash;
-      const search = window.location.search;
-      let targetEmail = '';
-      let isRegister = false;
-
-      if (hash.startsWith('#register')) {
-        isRegister = true;
-        const queryPart = hash.includes('?') ? hash.split('?')[1] : '';
-        const params = new URLSearchParams(queryPart);
-        targetEmail = params.get('email') || '';
-      } else if (search.includes('register')) {
-        isRegister = true;
-        const params = new URLSearchParams(search);
-        targetEmail = params.get('email') || '';
-      }
-
-      if (isRegister) {
-        setAuthModalMode('signup');
-        if (targetEmail) {
-          setAuthModalEmail(decodeURIComponent(targetEmail));
-        }
-        setIsAuthOpen(true);
-      }
-    } catch (e) {
-      console.error('Error parsing registration URL:', e);
-    }
-  }, []);
 
   const handleOpenAuth = (mode: 'signin' | 'signup' = 'signin', email: string = '') => {
     setAuthModalMode(mode);
