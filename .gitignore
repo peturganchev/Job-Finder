@@ -11,7 +11,7 @@ ENV/
 .browser_session/
 .cache/
 
-# Databases
+# Databases & temporary scrap dumps
 data/*.db
 data/*.sqlite3
 data/*.db-journal
@@ -19,6 +19,9 @@ data/user_settings.json
 data/.search.lock
 data/*.log
 data/*.py
+data/*.html
+data/*.json
+data/*.txt
 
 # Python caches
 __pycache__/

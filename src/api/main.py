@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.schemas import HealthResponse
-from src.api.routers import jobs, search, cv, market, settings
+from src.api.routers import jobs, search, cv, market, settings, waitlist
 
 app = FastAPI(
     title="Job-Finder Market Intelligence API",
@@ -65,6 +65,7 @@ app.include_router(search.router, prefix="/api/search", tags=["Search & Scraping
 app.include_router(cv.router, prefix="/api/cv", tags=["CV & Applications"])
 app.include_router(market.router, prefix="/api/market", tags=["Market Intelligence"])
 app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
 
 
 

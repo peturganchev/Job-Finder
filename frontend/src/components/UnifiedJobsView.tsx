@@ -125,7 +125,7 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
           sources: sourcesToUse,
           keywords: currentKeywords,
           max_jobs: Number(maxJobsPerSource) || 25,
-          clear_new: false, // Don't wipe existing jobs so the dashboard stays populated while searching
+          clear_new: true, // Clear old un-saved 'new' jobs when explicitly starting a fresh search
         },
         authToken
       );

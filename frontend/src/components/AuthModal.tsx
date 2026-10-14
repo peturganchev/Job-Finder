@@ -1,22 +1,44 @@
-import React, { useState } from 'react';
-import { X, Lock, Mail, Loader2, AlertCircle, CheckCircle2, UserPlus, LogIn } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Lock, Mail, Loader2, AlertCircle, CheckCircle2, UserPlus, LogIn, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { apiCheckWaitlist } from '../lib/api';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenWaitlist: () => void;
+  initialMode?: 'signin' | 'signup';
+  prefilledEmail?: string;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenWaitlist }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({
+  isOpen,
+  onClose,
+  onOpenWaitlist,
+  initialMode = 'signin',
+  prefilledEmail = '',
+}) => {
   const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail] = useState('');
+  const [mode, setMode] = useState<'signin' | 'signup'>(initialMode);
+  const [email, setEmail] = useState(prefilledEmail);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isWaitlistBlocked, setIsWaitlistBlocked] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode);
+      if (prefilledEmail) {
+        setEmail(prefilledEmail);
+      }
+      setErrorMsg(null);
+      setSuccessMsg(null);
+      setIsWaitlistBlocked(false);
+    }
+  }, [isOpen, initialMode, prefilledEmail]);
 
   if (!isOpen) return null;
 
@@ -25,6 +47,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenWai
     setLoading(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    setIsWaitlistBlocked(false);
+
+    const cleanEmail = email.trim();
 
     if (mode === 'signup' && password !== confirmPassword) {
       setErrorMsg('Паролите не съвпадат.');
@@ -40,16 +65,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenWai
 
     try {
       if (mode === 'signin') {
-        const { error } = await signIn(email.trim(), password);
+        const { error } = await signIn(cleanEmail, password);
         if (error) throw error;
         onClose();
       } else {
-        const { error, user } = await signUp(email.trim(), password);
+        // 1. Whitelist Verification
+        const check = await apiCheckWaitlist(cleanEmail);
+        if (!check.allowed) {
+          setIsWaitlistBlocked(true);
+          setErrorMsg(check.message || 'Този имейл адрес не е в списъка с одобрени потребители. Моля, първо заявете ранен достъп през Waitlist.');
+          setLoading(false);
+          return;
+        }
+
+        // 2. Perform Supabase Sign Up
+        const { error } = await signUp(cleanEmail, password);
         if (error) throw error;
-        if (user) {
-          setSuccessMsg('Регистрацията е успешна! Проверете имейла си за потвърждение.');
+
+        // 3. Immediately auto-signin so the user lands straight inside the dashboard!
+        const { error: signInErr } = await signIn(cleanEmail, password);
+        if (!signInErr) {
+          setSuccessMsg('Добре дошли! Влизане в таблото...');
+          setTimeout(() => {
+            onClose();
+            // Clean hash if was on register
+            if (window.location.hash.startsWith('#register')) {
+              window.location.hash = 'jobs';
+            }
+          }, 600);
         } else {
-          setSuccessMsg('Успешна регистрация!');
+          setSuccessMsg('Регистрацията е успешна! Можете да влезете в профила си.');
+          setMode('signin');
         }
       }
     } catch (err: unknown) {
@@ -66,6 +112,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenWai
     setConfirmPassword('');
     setErrorMsg(null);
     setSuccessMsg(null);
+    setIsWaitlistBlocked(false);
     onClose();
   };
 
@@ -82,7 +129,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenWai
         {/* Header Tabs */}
         <div className="flex border-b border-slate-800 mb-6">
           <button
-            onClick={() => { setMode('signin'); setErrorMsg(null); }}
+            onClick={() => { setMode('signin'); setErrorMsg(null); setIsWaitlistBlocked(false); }}
             className={`pb-3 font-semibold text-sm transition relative flex items-center gap-2 ${
               mode === 'signin' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-300'
             }`}
@@ -94,7 +141,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenWai
             )}
           </button>
           <button
-            onClick={() => { setMode('signup'); setErrorMsg(null); }}
+            onClick={() => { setMode('signup'); setErrorMsg(null); setIsWaitlistBlocked(false); }}
             className={`ml-6 pb-3 font-semibold text-sm transition relative flex items-center gap-2 ${
               mode === 'signup' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-300'
             }`}
@@ -108,9 +155,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenWai
         </div>
 
         {errorMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMsg}</span>
+          <div className="mb-4 p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-start gap-2.5">
+            {isWaitlistBlocked ? (
+              <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
+            ) : (
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1">
+              <span>{errorMsg}</span>
+              {isWaitlistBlocked && (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleClose();
+                      onOpenWaitlist();
+                    }}
+                    className="text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2 transition text-xs"
+                  >
+                    👉 Подайте заявка за достъп сега
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
