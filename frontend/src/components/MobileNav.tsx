@@ -58,7 +58,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
               <div className="relative">
                 <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : 'stroke-[1.8]'}`} />
                 {Boolean(tab.badge && tab.badge > 0) && (
-                  <span className="absolute -top-1 -right-2 bg-emerald-500 text-slate-950 text-[9px] font-extrabold px-1 min-w-[14px] h-[14px] rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-2 bg-emerald-500 text-on-accent text-[9px] font-extrabold px-1 min-w-[14px] h-[14px] rounded-full flex items-center justify-center">
                     {tab.badge}
                   </span>
                 )}

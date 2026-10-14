@@ -209,14 +209,34 @@ def update_settings(
 
                 # Build fallback payload embedding UI preferences into roadmap_progress if needed
                 fallback_payload = dict(update_payload)
-                cur_rp = fallback_payload.get("roadmap_progress") or {}
+                cur_rp = fallback_payload.get("roadmap_progress")
                 if not isinstance(cur_rp, dict):
-                    cur_rp = {}
-                cur_rp["_ui_preferences"] = {
-                    "ui_mode": req.ui_mode or "simple",
-                    "theme": req.theme or "dark",
-                    "max_jobs_per_source": req.max_jobs_per_source or 25,
-                }
+                    try:
+                        existing = client.table("user_settings").select("roadmap_progress").eq("user_id", str(user_id)).limit(1).execute()
+                        if existing.data and isinstance(existing.data[0].get("roadmap_progress"), dict):
+                            cur_rp = existing.data[0]["roadmap_progress"]
+                        else:
+                            cur_rp = {}
+                    except Exception:
+                        cur_rp = {}
+
+                cur_ui = cur_rp.get("_ui_preferences", {}) if isinstance(cur_rp.get("_ui_preferences"), dict) else {}
+                if req.ui_mode is not None:
+                    cur_ui["ui_mode"] = req.ui_mode
+                elif "ui_mode" not in cur_ui:
+                    cur_ui["ui_mode"] = "simple"
+
+                if req.theme is not None:
+                    cur_ui["theme"] = req.theme
+                elif "theme" not in cur_ui:
+                    cur_ui["theme"] = "dark"
+
+                if req.max_jobs_per_source is not None:
+                    cur_ui["max_jobs_per_source"] = req.max_jobs_per_source
+                elif "max_jobs_per_source" not in cur_ui:
+                    cur_ui["max_jobs_per_source"] = 25
+
+                cur_rp["_ui_preferences"] = cur_ui
                 fallback_payload["roadmap_progress"] = cur_rp
                 for k in ["ui_mode", "theme", "max_jobs_per_source"]:
                     fallback_payload.pop(k, None)

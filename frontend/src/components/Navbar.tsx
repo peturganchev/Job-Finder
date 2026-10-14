@@ -7,8 +7,11 @@ import {
   Database,
   Server,
   Users,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 interface NavbarProps {
   currentTab: string;
@@ -30,6 +33,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   uiMode = 'simple',
 }) => {
   const { user, signOut, isWaitlistAdmin } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const navItems = uiMode === 'simple'
     ? [
@@ -56,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             className="flex items-center gap-3 cursor-pointer group"
           >
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
-              <Cpu className="w-6 h-6 text-slate-950 font-bold" />
+              <Cpu className="w-6 h-6 text-on-accent font-bold" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -123,6 +127,21 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
+              {/* Theme Toggle Button next to email */}
+              <button
+                type="button"
+                onClick={toggleTheme}
+                aria-label={theme === 'dark' ? 'Превключи към светла тема' : 'Превключи към тъмна тема'}
+                title={theme === 'dark' ? 'Превключи към светла тема (Seafoam)' : 'Превключи към тъмна тема (Midnight)'}
+                className="p-2 rounded-xl text-slate-300 hover:text-emerald-400 bg-slate-800/60 hover:bg-slate-800/90 border border-slate-700/80 transition shadow-sm flex items-center justify-center cursor-pointer"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-4 h-4 text-amber-300 transition-transform duration-300 hover:rotate-45" />
+                ) : (
+                  <Moon className="w-4 h-4 text-teal-600 transition-transform duration-300 hover:-rotate-12" />
+                )}
+              </button>
+
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/80 text-xs text-slate-200">
                 <div className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-[10px]">
                   {user.email?.[0].toUpperCase() || 'U'}
@@ -143,6 +162,20 @@ export const Navbar: React.FC<NavbarProps> = ({
           ) : (
             <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={toggleTheme}
+                aria-label={theme === 'dark' ? 'Превключи към светла тема' : 'Превключи към тъмна тема'}
+                title={theme === 'dark' ? 'Превключи към светла тема (Seafoam)' : 'Превключи към тъмна тема (Midnight)'}
+                className="p-2 rounded-xl text-slate-300 hover:text-emerald-400 bg-slate-800/60 hover:bg-slate-800/90 border border-slate-700/80 transition shadow-sm flex items-center justify-center cursor-pointer"
+              >
+                {theme === 'dark' ? (
+                  <Sun className="w-4 h-4 text-amber-300 transition-transform duration-300 hover:rotate-45" />
+                ) : (
+                  <Moon className="w-4 h-4 text-teal-600 transition-transform duration-300 hover:-rotate-12" />
+                )}
+              </button>
+
+              <button
                 onClick={onOpenWaitlist}
                 className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
               >
@@ -152,7 +185,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
               <button
                 onClick={onOpenAuth}
-                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition"
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-on-accent font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>Вход</span>
