@@ -27,6 +27,7 @@ interface SettingsViewProps {
   onOpenAdmin: () => void;
   uiMode?: 'simple' | 'pro';
   onUIModeChange?: (mode: 'simple' | 'pro') => void;
+  onSettingsSaved?: (sources: string[], maxJobs: number) => void;
 }
 
 const DEFAULT_BLACKLIST_TITLES = [
@@ -45,7 +46,7 @@ const DEFAULT_BLACKLIST_TITLES = [
   'Manual QA',
 ];
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode, onUIModeChange }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode, onUIModeChange, onSettingsSaved }) => {
   const { session, isWaitlistAdmin } = useAuth();
 
   // Settings State
@@ -59,14 +60,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
   });
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
-  // Active Sources
-  const [activeSources, setActiveSources] = useState<string[]>([
-    'dev_bg',
-    'jobs_bg',
-    'linkedin',
-    'euremotejobs',
-    'hackernews',
-  ]);
+  // Active Sources (Persistent with localStorage fallback)
+  const [activeSources, setActiveSources] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('jf_active_sources');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((s: string) => s.replace('.', '_'));
+        }
+      }
+    } catch {}
+    return [
+      'dev_bg',
+      'jobs_bg',
+      'linkedin',
+      'euremotejobs',
+      'hackernews',
+    ];
+  });
 
   // Gemini state
   const [apiKeyInput, setApiKeyInput] = useState<string>('');
@@ -95,7 +107,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
   // Search defaults
   const [location, setLocation] = useState<string>('Bulgaria');
   const [remoteLocation, setRemoteLocation] = useState<string>('Worldwide');
-  const [maxJobsPerSource, setMaxJobsPerSource] = useState<number>(25);
+  const [maxJobsPerSource, setMaxJobsPerSource] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('jf_max_jobs_per_source');
+      if (saved) return Number(saved) || 25;
+    } catch {}
+    return 25;
+  });
 
   // Load settings on mount
   useEffect(() => {
@@ -110,7 +128,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
           setTheme(data.theme);
         }
         if (data.active_sources && data.active_sources.length > 0) {
-          setActiveSources(data.active_sources);
+          const normalized = data.active_sources.map((s) => s.replace('.', '_'));
+          setActiveSources(normalized);
+          localStorage.setItem('jf_active_sources', JSON.stringify(normalized));
         }
         if (data.gemini_api_key_masked) {
           setMaskedKey(data.gemini_api_key_masked);
@@ -129,7 +149,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
         }
         if (data.location) setLocation(data.location);
         if (data.remote_location) setRemoteLocation(data.remote_location);
-        if (data.max_jobs_per_source) setMaxJobsPerSource(data.max_jobs_per_source);
+        if (data.max_jobs_per_source) {
+          setMaxJobsPerSource(data.max_jobs_per_source);
+          localStorage.setItem('jf_max_jobs_per_source', String(data.max_jobs_per_source));
+        }
       })
       .catch((err) => {
         console.error('Failed to load settings:', err);
@@ -227,11 +250,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
         payload.gemini_api_key = apiKeyInput.trim();
       }
 
-      // Save UI mode to local storage immediately
+      // Save UI preferences and platforms to local storage immediately
+      const normalizedSources = activeSources.map((s) => s.replace('.', '_'));
+      localStorage.setItem('jf_active_sources', JSON.stringify(normalizedSources));
+      localStorage.setItem('jf_max_jobs_per_source', String(maxJobsPerSource));
       localStorage.setItem('jf_ui_mode', currentUIMode);
       localStorage.setItem('jf_theme', theme);
+
       if (onUIModeChange) {
         onUIModeChange(currentUIMode);
+      }
+      if (onSettingsSaved) {
+        onSettingsSaved(normalizedSources, maxJobsPerSource);
       }
 
       const res = await apiUpdateSettings(payload, session?.access_token);
@@ -418,7 +448,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
             { id: 'euremotejobs', label: 'EU Remote Jobs' },
             { id: 'hackernews', label: 'Hacker News' },
           ].map((platform) => {
-            const isChecked = activeSources.includes(platform.id);
+            const isChecked = activeSources.some((s) => s.replace('.', '_') === platform.id);
             return (
               <label
                 key={platform.id}
@@ -432,11 +462,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
                   type="checkbox"
                   checked={isChecked}
                   onChange={() => {
-                    if (isChecked) {
-                      setActiveSources(activeSources.filter((s) => s !== platform.id));
+                    const normId = platform.id.replace('.', '_');
+                    const hasIt = activeSources.some((s) => s.replace('.', '_') === normId);
+                    let next: string[];
+                    if (hasIt) {
+                      next = activeSources.filter((s) => s.replace('.', '_') !== normId);
                     } else {
-                      setActiveSources([...activeSources, platform.id]);
+                      next = [...activeSources.map((s) => s.replace('.', '_')), normId];
                     }
+                    const cleanList = Array.from(new Set(next));
+                    setActiveSources(cleanList);
+                    localStorage.setItem('jf_active_sources', JSON.stringify(cleanList));
                   }}
                   className="rounded bg-slate-900 border-slate-700 text-teal-500 focus:ring-0"
                 />
@@ -454,7 +490,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
           </div>
           <select
             value={maxJobsPerSource}
-            onChange={(e) => setMaxJobsPerSource(Number(e.target.value))}
+            onChange={(e) => {
+              const val = Number(e.target.value);
+              setMaxJobsPerSource(val);
+              localStorage.setItem('jf_max_jobs_per_source', String(val));
+            }}
             className="px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs focus:outline-none focus:border-teal-500 transition min-w-[160px]"
           >
             <option value={25}>25 позиции (Препоръчително)</option>

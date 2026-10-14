@@ -83,17 +83,36 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
     else:
         # Fallback to local configuration for unauthenticated guest sessions
         search_keywords = local_settings.search.keywords or []
-    active_sources = sm.enabled_sources()
+
+    # Read sources from Supabase if present
+    db_sources = db_settings.get("sources") if (db_settings and "sources" in db_settings) else None
+    if db_sources:
+        if isinstance(db_sources, dict):
+            active_sources = [k for k, v in db_sources.items() if v]
+        elif isinstance(db_sources, list):
+            active_sources = db_sources
+        else:
+            active_sources = sm.enabled_sources()
+    else:
+        active_sources = sm.enabled_sources()
+
+    # Normalize active_sources to consistent underscore notation ('dev_bg', 'jobs_bg')
+    normalized_sources = []
+    for s in active_sources:
+        norm = str(s).strip().replace(".", "_")
+        if norm not in normalized_sources:
+            normalized_sources.append(norm)
 
     roadmap_progress = (
         db_settings.get("roadmap_progress")
         or local_settings.roadmap_progress
         or {}
     )
+    ui_prefs = roadmap_progress.get("_ui_preferences", {}) if isinstance(roadmap_progress, dict) else {}
 
-    ui_mode = db_settings.get("ui_mode") or "simple"
-    theme = db_settings.get("theme") or "dark"
-    max_jobs = db_settings.get("max_jobs_per_source") or local_settings.search.max_jobs_per_source or 25
+    ui_mode = db_settings.get("ui_mode") or ui_prefs.get("ui_mode") or "simple"
+    theme = db_settings.get("theme") or ui_prefs.get("theme") or "dark"
+    max_jobs = db_settings.get("max_jobs_per_source") or ui_prefs.get("max_jobs_per_source") or local_settings.search.max_jobs_per_source or 25
 
     return SettingsResponse(
         gemini_api_key_masked=_mask_key(raw_api_key),
@@ -102,7 +121,7 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
         blacklist_title=blacklist_title,
         blacklist_companies=blacklist_companies,
         search_keywords=search_keywords,
-        active_sources=active_sources,
+        active_sources=normalized_sources,
         max_jobs_per_source=max_jobs,
         location=local_settings.search.location,
         remote_location=local_settings.search.remote_location,
@@ -117,7 +136,7 @@ def update_settings(
     req: SettingsUpdateRequest,
     user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
 ):
-    print(f"📥 [update_settings] Incoming request. user_id={user.get('id') if user else None}, email={user.get('email') if user else None}, keywords={req.search_keywords}")
+    print(f"📥 [update_settings] Incoming request. user_id={user.get('id') if user else None}, email={user.get('email') if user else None}, sources={req.active_sources}")
     sm = SettingsManager()
     local_settings = sm.load()
 
@@ -142,7 +161,7 @@ def update_settings(
         local_settings.roadmap_progress = req.roadmap_progress
     if req.active_sources is not None:
         for src in ["dev_bg", "jobs_bg", "linkedin", "euremotejobs", "hackernews"]:
-            setattr(local_settings.sources, src, src in req.active_sources)
+            setattr(local_settings.sources, src, (src in req.active_sources or src.replace("_", ".") in req.active_sources))
 
     sm.save(local_settings)
 
@@ -177,7 +196,7 @@ def update_settings(
                 update_payload["max_jobs_per_source"] = req.max_jobs_per_source
             if req.active_sources is not None:
                 update_payload["sources"] = {
-                    src: (src in req.active_sources)
+                    src: (src in req.active_sources or src.replace("_", ".") in req.active_sources)
                     for src in ["dev_bg", "jobs_bg", "linkedin", "euremotejobs", "hackernews"]
                 }
 
@@ -185,10 +204,24 @@ def update_settings(
                 res = client.table("user_settings").upsert(update_payload, on_conflict="user_id").execute()
             except Exception as upsert_err:
                 err_str = str(upsert_err).lower()
-                # If column doesn't exist yet in table schema, retry without the new columns
-                if "column" in err_str and "does not exist" in err_str:
-                    fallback_payload = {k: v for k, v in update_payload.items() if k not in ["ui_mode", "theme", "max_jobs_per_source"]}
+                print(f"⚠️ Primary user_settings upsert error: {err_str}")
+                # If column doesn't exist yet in Supabase SQL schema cache (PGRST204 or missing column)
+                if "pgrst204" in err_str or "column" in err_str or "schema cache" in err_str:
+                    fallback_payload = dict(update_payload)
+                    cur_rp = fallback_payload.get("roadmap_progress") or {}
+                    if not isinstance(cur_rp, dict):
+                        cur_rp = {}
+                    cur_rp["_ui_preferences"] = {
+                        "ui_mode": req.ui_mode or "simple",
+                        "theme": req.theme or "dark",
+                        "max_jobs_per_source": req.max_jobs_per_source or 25,
+                    }
+                    fallback_payload["roadmap_progress"] = cur_rp
+                    for k in ["ui_mode", "theme", "max_jobs_per_source"]:
+                        fallback_payload.pop(k, None)
+
                     client.table("user_settings").upsert(fallback_payload, on_conflict="user_id").execute()
+                    print("✅ Fallback user_settings upsert succeeded with embedded _ui_preferences in roadmap_progress.")
                 else:
                     raise upsert_err
         except Exception as e:
