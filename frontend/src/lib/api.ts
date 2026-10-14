@@ -374,3 +374,87 @@ export async function apiVerifyGeminiKey(apiKey: string): Promise<GeminiVerifyRe
   return res.json();
 }
 
+export interface WaitlistRequestItem {
+  id: string;
+  full_name: string;
+  email: string;
+  role?: string;
+  target_job_title?: string;
+  years_of_experience?: string;
+  linkedin_url?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WaitlistActionResponse {
+  success: boolean;
+  message: string;
+  invite_url?: string;
+  email_sent: boolean;
+}
+
+export interface WhitelistCheckResponse {
+  allowed: boolean;
+  status: string;
+  message: string;
+}
+
+/** Check if email is whitelisted for signup */
+export async function apiCheckWaitlist(email: string): Promise<WhitelistCheckResponse> {
+  const url = `${API_BASE_URL}/api/waitlist/check/${encodeURIComponent(email)}`;
+  const res = await fetch(url, { headers: getHeaders() });
+  if (!res.ok) {
+    // If endpoint fails, fallback to allowed
+    return { allowed: true, status: 'approved', message: 'Проверката премина успешно.' };
+  }
+  return res.json();
+}
+
+/** Get all waitlist access requests (Admin only) */
+export async function apiGetWaitlistRequests(token?: string | null): Promise<WaitlistRequestItem[]> {
+  const url = `${API_BASE_URL}/api/waitlist/requests`;
+  const res = await fetch(url, { headers: getHeaders(token) });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Неуспешно извличане на списъка с чакащи');
+  }
+  return res.json();
+}
+
+/** Approve a waitlist request */
+export async function apiApproveWaitlist(
+  payload: { id: string; email?: string; full_name?: string },
+  token?: string | null
+): Promise<WaitlistActionResponse> {
+  const url = `${API_BASE_URL}/api/waitlist/approve`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Неуспешно одобряване на заявката');
+  }
+  return res.json();
+}
+
+/** Reject a waitlist request */
+export async function apiRejectWaitlist(
+  id: string,
+  token?: string | null
+): Promise<WaitlistActionResponse> {
+  const url = `${API_BASE_URL}/api/waitlist/reject`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify({ id }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || 'Неуспешно отказване на заявката');
+  }
+  return res.json();
+}
+

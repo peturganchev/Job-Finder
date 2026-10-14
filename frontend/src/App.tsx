@@ -50,8 +50,47 @@ function AppContent() {
 
   // Modals state
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
+  const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>('signin');
+  const [authModalEmail, setAuthModalEmail] = useState<string>('');
   const [isWaitlistOpen, setIsWaitlistOpen] = useState<boolean>(false);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
+
+  // Check URL hash / query on mount for invite links (e.g. #register?email=...)
+  useEffect(() => {
+    try {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      let targetEmail = '';
+      let isRegister = false;
+
+      if (hash.startsWith('#register')) {
+        isRegister = true;
+        const queryPart = hash.includes('?') ? hash.split('?')[1] : '';
+        const params = new URLSearchParams(queryPart);
+        targetEmail = params.get('email') || '';
+      } else if (search.includes('register')) {
+        isRegister = true;
+        const params = new URLSearchParams(search);
+        targetEmail = params.get('email') || '';
+      }
+
+      if (isRegister) {
+        setAuthModalMode('signup');
+        if (targetEmail) {
+          setAuthModalEmail(decodeURIComponent(targetEmail));
+        }
+        setIsAuthOpen(true);
+      }
+    } catch (e) {
+      console.error('Error parsing registration URL:', e);
+    }
+  }, []);
+
+  const handleOpenAuth = (mode: 'signin' | 'signup' = 'signin', email: string = '') => {
+    setAuthModalMode(mode);
+    setAuthModalEmail(email);
+    setIsAuthOpen(true);
+  };
 
   // Selected Job for Detail Modal
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -249,7 +288,7 @@ function AppContent() {
       <Navbar
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
-        onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenAuth={() => handleOpenAuth('signin')}
         onOpenWaitlist={() => setIsWaitlistOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
         apiHealthy={apiHealthy}
@@ -284,7 +323,7 @@ function AppContent() {
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 justify-center mb-8">
                 <button
-                  onClick={() => setIsAuthOpen(true)}
+                  onClick={() => handleOpenAuth('signin')}
                   className="px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
                 >
                   <LogIn className="w-4 h-4" />
@@ -413,6 +452,8 @@ function AppContent() {
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         onOpenWaitlist={() => setIsWaitlistOpen(true)}
+        initialMode={authModalMode}
+        prefilledEmail={authModalEmail}
       />
 
       <WaitlistModal
