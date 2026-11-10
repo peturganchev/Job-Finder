@@ -33,43 +33,17 @@ export default {
       const cleanBase = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
       const targetUrl = new URL(url.pathname + url.search, cleanBase);
 
-      const forwardedHeaders = new Headers(request.headers);
-      forwardedHeaders.delete('host');
-      forwardedHeaders.delete('cf-connecting-ip');
-      forwardedHeaders.delete('cf-ray');
-      forwardedHeaders.delete('cf-ipcountry');
-      forwardedHeaders.delete('cf-visitor');
-
-      const ua = forwardedHeaders.get('user-agent');
-      if (!ua || /Mozilla|Chrome|Safari|Firefox|Edge/i.test(ua)) {
-        forwardedHeaders.set('user-agent', 'JobFinder-Proxy/2.0');
-      }
-
-      const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
-      const bodyBuffer = hasBody ? await request.arrayBuffer() : null;
-
-      const createForwardRequest = () =>
-        new Request(targetUrl.toString(), {
-          method: request.method,
-          headers: forwardedHeaders,
-          body: bodyBuffer ? bodyBuffer.slice(0) : undefined,
-          redirect: 'follow',
-        });
+      // Клониране и препращане на заявката към бекенда (Reverse Proxy)
+      const forwardRequest = new Request(targetUrl.toString(), {
+        method: request.method,
+        headers: request.headers,
+        body: request.body,
+        redirect: 'follow',
+      });
 
       try {
-        let response = await fetch(createForwardRequest());
-
-        const routing = response.headers.get('x-render-routing') || '';
-        const shouldRetry =
-          (response.status === 429 && routing.includes('hibernate-rate-limited')) ||
-          response.status === 502 ||
-          response.status === 503;
-
-        if (shouldRetry) {
-          await new Promise((resolve) => setTimeout(resolve, 2500));
-          response = await fetch(createForwardRequest());
-        }
-
+        const response = await fetch(forwardRequest);
+        // Добавяме CORS за сигурност
         const newHeaders = new Headers(response.headers);
         newHeaders.set("Access-Control-Allow-Origin", "*");
         return new Response(response.body, {
