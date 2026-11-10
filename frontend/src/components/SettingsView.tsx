@@ -25,6 +25,7 @@ import {
 import { apiGetSettings, apiUpdateSettings, apiVerifyGeminiKey, type SettingsData } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useToast } from '../context/ToastContext';
 
 interface SettingsViewProps {
   onOpenAdmin: () => void;
@@ -51,6 +52,7 @@ const DEFAULT_BLACKLIST_TITLES = [
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode, onUIModeChange, onSettingsSaved }) => {
   const { session, isWaitlistAdmin } = useAuth();
+  const { showSuccess, showError } = useToast();
 
   // Settings State
   const [loading, setLoading] = useState<boolean>(true);
@@ -163,7 +165,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
       .finally(() => {
         setLoading(false);
       });
-  }, [session]);
+  }, [session, applyServerTheme]);
 
   // Verify Key Handler
   const handleVerifyKey = async () => {
@@ -268,19 +270,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
       }
 
       const res = await apiUpdateSettings(payload, session?.access_token);
+      const successText = res.message || 'Настройките бяха запазени успешно!';
       setStatusMsg({
         type: 'success',
-        text: res.message || 'Настройките бяха запазени успешно!',
+        text: successText,
       });
+      showSuccess(successText);
       if (apiKeyInput.trim()) {
         setMaskedKey(`${apiKeyInput.trim().slice(0, 6)}...${apiKeyInput.trim().slice(-4)}`);
         setApiKeyInput('');
       }
     } catch (err: unknown) {
+      const errorText = err instanceof Error ? err.message : 'Грешка при запис на настройките.';
       setStatusMsg({
         type: 'error',
-        text: err instanceof Error ? err.message : 'Грешка при запис на настройките.',
+        text: errorText,
       });
+      showError(errorText);
     } finally {
       setSaving(false);
     }
