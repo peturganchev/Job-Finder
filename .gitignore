@@ -43,6 +43,7 @@ downloaded_files/
 
 # Antigravity local agent workspace & skills
 .agents/
+.ai/
 
 # Binaries & Wrangler cache
 cloudflared.exe

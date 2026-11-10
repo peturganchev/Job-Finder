@@ -1,7 +1,7 @@
 /**
  * API client library for Job-Finder v2 FastAPI backend.
  */
-import { API_BASE_URL } from './supabase';
+import { API_BASE_URL, supabase } from './supabase';
 import type { Job, MarketStats } from '../types';
 
 export interface JobListResponse {
@@ -55,8 +55,8 @@ function getHeaders(token?: string | null): HeadersInit {
 }
 
 /**
- * Executes a fetch request with automatic retries for cold-start delays (502, 503, 504)
- * and network wakeup failures common on free-tier cloud backends like Render.
+ * Executes a fetch request with automatic retries for cold-start delays (502, 503, 504),
+ * rate limits (429), and network wakeup failures common on free-tier cloud backends like Render.
  */
 export async function fetchWithColdStartRetry(
   url: string,
@@ -68,8 +68,10 @@ export async function fetchWithColdStartRetry(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const res = await fetch(url, options);
-      if ([502, 503, 504].includes(res.status) && attempt < maxRetries) {
-        const delay = Math.min(initialDelayMs * Math.pow(1.25, attempt), 5000);
+      if ([429, 502, 503, 504].includes(res.status) && attempt < maxRetries) {
+        const delay = res.status === 429
+          ? Math.min(3500 * Math.pow(1.3, attempt), 8000)
+          : Math.min(initialDelayMs * Math.pow(1.25, attempt), 5000);
         console.warn(`[ColdStart] Received HTTP ${res.status} from ${url}. Retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries})...`);
         await new Promise((r) => setTimeout(r, delay));
         continue;
@@ -87,6 +89,21 @@ export async function fetchWithColdStartRetry(
     }
   }
   throw lastError || new Error(`Failed to connect to ${url}`);
+}
+
+/** Check health of FastAPI backend server */
+export async function apiCheckHealth(): Promise<boolean> {
+  try {
+    const res = await fetchWithColdStartRetry(`${API_BASE_URL}/api/health`, { method: 'GET' }, 3, 1000);
+    if (!res.ok) {
+      return false;
+    }
+    const data = await res.json().catch(() => null);
+    const status = typeof data?.status === 'string' ? data.status.toLowerCase() : '';
+    return status === 'healthy' || status === 'ok';
+  } catch {
+    return false;
+  }
 }
 
 /** Fetch jobs with optional filtering */
@@ -343,22 +360,145 @@ export async function apiUpdateSettings(
   },
   token?: string | null
 ): Promise<{ success: boolean; message: string }> {
-  const url = `${API_BASE_URL}/api/settings`;
-  const res = await fetchWithColdStartRetry(
-    url,
-    {
-      method: 'POST',
-      headers: getHeaders(token),
-      body: JSON.stringify(payload),
-    },
-    6,
-    2000
-  );
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || 'Failed to update settings');
+  let supabaseUpsertSucceeded = false;
+
+  // 1. Direct resilient upsert to Supabase 'user_settings' if an active user exists
+  try {
+    let activeUserId: string | null = null;
+    const { data: sessionData } = await supabase.auth.getSession();
+    activeUserId = sessionData?.session?.user?.id || null;
+    if (!activeUserId) {
+      const { data: userData } = await supabase.auth.getUser(token || undefined);
+      activeUserId = userData?.user?.id || null;
+    }
+
+    if (activeUserId) {
+      const supabasePayload: Record<string, any> = {
+        user_id: activeUserId,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (payload.gemini_api_key !== undefined) {
+        supabasePayload.gemini_api_key = payload.gemini_api_key?.trim() || null;
+      }
+      if (payload.gemini_model !== undefined) {
+        supabasePayload.gemini_model = payload.gemini_model.trim();
+      }
+      if (payload.blacklist_title !== undefined) {
+        supabasePayload.blacklist_titles = payload.blacklist_title.map((t) => t.trim()).filter(Boolean);
+      }
+      if (payload.blacklist_companies !== undefined) {
+        supabasePayload.blacklist_companies = payload.blacklist_companies.map((c) => c.trim()).filter(Boolean);
+      }
+      if (payload.search_keywords !== undefined) {
+        supabasePayload.keywords = payload.search_keywords.map((k) => k.trim()).filter(Boolean);
+      }
+      if (payload.location !== undefined) {
+        supabasePayload.location = payload.location.trim();
+      }
+      if (payload.remote_location !== undefined) {
+        supabasePayload.remote_location = payload.remote_location.trim();
+      }
+      if (payload.active_sources !== undefined) {
+        const activeSet = new Set(payload.active_sources.map((s) => s.replace('.', '_')));
+        const sourcesObj: Record<string, boolean> = {};
+        for (const src of ['dev_bg', 'jobs_bg', 'linkedin', 'euremotejobs', 'hackernews', 'himalayas']) {
+          sourcesObj[src] = activeSet.has(src);
+        }
+        for (const src of payload.active_sources) {
+          sourcesObj[src.replace('.', '_')] = true;
+        }
+        supabasePayload.sources = sourcesObj;
+      }
+
+      // Prepare roadmap_progress with embedded _ui_preferences
+      let curRp: Record<string, any> = payload.roadmap_progress ? { ...payload.roadmap_progress } : {};
+      if (!payload.roadmap_progress) {
+        try {
+          const { data: existingData } = await supabase
+            .from('user_settings')
+            .select('roadmap_progress')
+            .eq('user_id', activeUserId)
+            .maybeSingle();
+          if (existingData?.roadmap_progress && typeof existingData.roadmap_progress === 'object') {
+            curRp = { ...existingData.roadmap_progress };
+          }
+        } catch {
+          // Ignore fetch error and fallback to default
+        }
+      }
+
+      const curUi: Record<string, any> = (curRp._ui_preferences && typeof curRp._ui_preferences === 'object')
+        ? { ...curRp._ui_preferences }
+        : {};
+
+      if (payload.ui_mode !== undefined) {
+        curUi.ui_mode = payload.ui_mode;
+      } else if (!curUi.ui_mode) {
+        curUi.ui_mode = (typeof window !== 'undefined' && window.localStorage?.getItem('jf_ui_mode')) || 'simple';
+      }
+
+      if (payload.theme !== undefined) {
+        curUi.theme = payload.theme;
+      } else if (!curUi.theme) {
+        curUi.theme = (typeof window !== 'undefined' && window.localStorage?.getItem('jf_theme')) || 'dark';
+      }
+
+      if (payload.max_jobs_per_source !== undefined) {
+        curUi.max_jobs_per_source = payload.max_jobs_per_source;
+      } else if (curUi.max_jobs_per_source === undefined) {
+        const storedMax = typeof window !== 'undefined' ? Number(window.localStorage?.getItem('jf_max_jobs_per_source')) : 0;
+        curUi.max_jobs_per_source = storedMax || 25;
+      }
+
+      curRp._ui_preferences = curUi;
+      supabasePayload.roadmap_progress = curRp;
+
+      const { error: sbError } = await supabase
+        .from('user_settings')
+        .upsert(supabasePayload, { onConflict: 'user_id' });
+
+      if (sbError) {
+        console.warn('[apiUpdateSettings] Direct Supabase upsert error:', sbError);
+      } else {
+        supabaseUpsertSucceeded = true;
+      }
+    }
+  } catch (err) {
+    console.warn('[apiUpdateSettings] Supabase sync attempt failed:', err);
   }
-  return res.json();
+
+  // 2. Call FastAPI POST /api/settings
+  const url = `${API_BASE_URL}/api/settings`;
+  try {
+    const res = await fetchWithColdStartRetry(
+      url,
+      {
+        method: 'POST',
+        headers: getHeaders(token),
+        body: JSON.stringify(payload),
+      },
+      6,
+      2000
+    );
+
+    if (!res.ok) {
+      if (supabaseUpsertSucceeded) {
+        console.warn(`[apiUpdateSettings] FastAPI returned HTTP ${res.status}, but Supabase upsert succeeded. Returning fallback success.`);
+        return { success: true, message: 'Настройките са запазени успешно в профила ви!' };
+      }
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to update settings');
+    }
+
+    return await res.json();
+  } catch (apiErr: any) {
+    if (supabaseUpsertSucceeded) {
+      console.warn('[apiUpdateSettings] FastAPI call failed, but Supabase upsert succeeded:', apiErr);
+      return { success: true, message: 'Настройките са запазени успешно в профила ви!' };
+    }
+    throw apiErr;
+  }
 }
 
 /** Verify a Gemini API Key */

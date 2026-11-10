@@ -15,9 +15,8 @@ import { ProfileView } from './components/ProfileView';
 import { InsightsView } from './components/InsightsView';
 import { SettingsView } from './components/SettingsView';
 import { RoadmapPortfolioView } from './components/RoadmapPortfolioView';
-import { apiFetchJobs, apiUpdateJobStatus, apiDeleteJob, apiFetchMarketStats, apiGetSettings } from './lib/api';
+import { apiFetchJobs, apiUpdateJobStatus, apiDeleteJob, apiFetchMarketStats, apiGetSettings, apiCheckHealth } from './lib/api';
 import type { Job, ApplicationStatus, MarketStats, UIMode } from './types';
-import { API_BASE_URL } from './lib/supabase';
 import { Sparkles, Lock, LogIn, Cpu } from 'lucide-react';
 
 
@@ -140,6 +139,7 @@ function AppContent() {
       const data = await apiFetchJobs({}, tokenRef.current);
       if (requestId !== jobsRequestId.current) return; // stale response
       setJobs(data.jobs || []);
+      setApiHealthy(true);
     } catch (err) {
       console.error('Error fetching jobs:', err);
     } finally {
@@ -151,14 +151,15 @@ function AppContent() {
   const loadStats = useCallback(async (deduplicate: boolean = true) => {
     setLoadingStats(true);
     try {
-      const data = await apiFetchMarketStats(deduplicate, session?.access_token);
+      const data = await apiFetchMarketStats(deduplicate, tokenRef.current);
       setMarketStats(data);
+      setApiHealthy(true);
     } catch (err) {
       console.error('Error fetching market stats:', err);
     } finally {
       setLoadingStats(false);
     }
-  }, [session]);
+  }, []);
 
   // UI Mode (Simple vs Pro)
   const [uiMode, setUiMode] = useState<UIMode>(() => {
@@ -209,7 +210,7 @@ function AppContent() {
   // Load settings on login to sync UI Mode, Sources, and Limits
   const loadSettings = useCallback(async () => {
     try {
-      const data = await apiGetSettings(session?.access_token);
+      const data = await apiGetSettings(tokenRef.current);
       if (data.ui_mode) {
         setUiMode(data.ui_mode);
         localStorage.setItem('jf_ui_mode', data.ui_mode);
@@ -226,37 +227,40 @@ function AppContent() {
         setMaxJobsPerSource(data.max_jobs_per_source);
         localStorage.setItem('jf_max_jobs_per_source', String(data.max_jobs_per_source));
       }
+      setApiHealthy(true);
     } catch (err) {
       console.error('Failed to load settings in App:', err);
     }
-  }, [session, applyServerTheme]);
+  }, [applyServerTheme]);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/health`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.status === 'healthy') setApiHealthy(true);
-      })
-      .catch(() => setApiHealthy(false));
+    apiCheckHealth().then((isHealthy) => {
+      if (isHealthy) setApiHealthy(true);
+    });
 
     if (user) {
-      loadStats();
-      loadSettings();
+      loadJobs();
+      const timer = setTimeout(() => {
+        loadSettings();
+        loadStats();
+      }, 400);
+      return () => clearTimeout(timer);
     } else {
       setJobs([]);
       setMarketStats(null);
       setLoadingJobs(false);
       setLoadingStats(false);
     }
-  }, [user, loadStats, loadSettings]);
+  }, [user?.id, loadJobs, loadStats, loadSettings]);
 
-  // Load jobs on login and auto-refresh whenever the user returns to the jobs tab
-  const userId = user?.id;
+  // Auto-refresh whenever the user returns to the jobs tab
+  const prevTabRef = useRef(currentTab);
   useEffect(() => {
-    if (userId && currentTab === 'jobs') {
+    if (user?.id && currentTab === 'jobs' && prevTabRef.current !== 'jobs') {
       loadJobs();
     }
-  }, [currentTab, userId, loadJobs]);
+    prevTabRef.current = currentTab;
+  }, [currentTab, user?.id, loadJobs]);
 
   // Optimistic Job Status Update
   const handleStatusChange = async (jobId: string | number, newStatus: ApplicationStatus) => {
