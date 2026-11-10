@@ -1,7 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import type { Job, ApplicationStatus } from '../types';
 import { JobCard } from './JobCard';
+import { KanbanBoard } from './KanbanBoard';
 import { AIProgressBar } from './AIProgressBar';
+import { useDebounce } from '../lib/useDebounce';
+import { useToast } from '../context/ToastContext';
 import {
   Search,
   Sparkles,
@@ -9,6 +12,9 @@ import {
   X,
   Globe,
   Coins,
+  Kanban,
+  LayoutList,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { apiStartSearch, apiGetSearchStatus } from '../lib/api';
 
@@ -21,6 +27,7 @@ interface UnifiedJobsViewProps {
   authToken?: string | null;
   activeSources?: string[];
   maxJobsPerSource?: number;
+  initialViewMode?: 'list' | 'kanban';
 }
 
 export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
@@ -32,7 +39,13 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
   authToken,
   activeSources,
   maxJobsPerSource = 25,
+  initialViewMode = 'list',
 }) => {
+  const { showSuccess, showError } = useToast();
+
+  // View Mode: list vs kanban
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>(initialViewMode);
+
   // Tags State
   const [tags, setTags] = useState<string[]>(() => {
     try {
@@ -43,6 +56,7 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
     }
   });
   const [inputValue, setInputValue] = useState('');
+  const debouncedInput = useDebounce(inputValue, 250);
 
   // Search execution & AI Progress Bar state
   const [isSearching, setIsSearching] = useState(false);
@@ -52,8 +66,11 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
   const [onlyRemote, setOnlyRemote] = useState(false);
   const [onlyWithSalary, setOnlyWithSalary] = useState(false);
   const [sourceFilter, setSourceFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [minScoreFilter, setMinScoreFilter] = useState<number>(0);
+  const [minSalary, setMinSalary] = useState<number>(0);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Save tags to localStorage
   const updateTags = (newTags: string[]) => {
@@ -99,7 +116,6 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
   const handleStartSearch = async () => {
     if (isSearching) return;
 
-    // Flush any pending text in input into tags
     let currentKeywords = [...tags];
     if (inputValue.trim()) {
       currentKeywords.push(inputValue.trim());
@@ -116,16 +132,17 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
     setSearchLog('🚀 Инициализиране на търсенето в избраните платформи...');
 
     try {
-      const sourcesToUse = activeSources && activeSources.length > 0
-        ? activeSources
-        : ['dev_bg', 'jobs_bg', 'linkedin', 'euremotejobs'];
+      const sourcesToUse =
+        activeSources && activeSources.length > 0
+          ? activeSources
+          : ['dev_bg', 'jobs_bg', 'linkedin', 'euremotejobs'];
 
       const startRes = await apiStartSearch(
         {
           sources: sourcesToUse,
           keywords: currentKeywords,
           max_jobs: Number(maxJobsPerSource) || 25,
-          clear_new: true, // Clear old un-saved 'new' jobs when explicitly starting a fresh search
+          clear_new: true,
         },
         authToken
       );
@@ -137,19 +154,22 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
       let failsafe: ReturnType<typeof setTimeout> | undefined;
       let pollInterval: ReturnType<typeof setInterval> | undefined;
 
-      const finish = (message: string) => {
+      const finish = (message: string, isSuccess = true) => {
         if (finished) return;
         finished = true;
         if (pollInterval) clearInterval(pollInterval);
         if (failsafe) clearTimeout(failsafe);
         setSearchLog(message);
         setIsSearching(false);
-        // Immediate refresh + a delayed one to catch trailing AI scores
         onRefresh();
         setTimeout(() => onRefresh(), 1500);
+        if (isSuccess) {
+          showSuccess('Търсенето завърши успешно!');
+        } else {
+          showError(message);
+        }
       };
 
-      // Poll task progress
       pollInterval = setInterval(async () => {
         try {
           const statusRes = await apiGetSearchStatus(taskId, authToken);
@@ -158,31 +178,33 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
             setSearchLog(statusRes.logs[statusRes.logs.length - 1]);
           }
 
-          // Stream results into the list while scraping is still running
           if ((statusRes.jobs_found || 0) > lastJobsFound) {
             lastJobsFound = statusRes.jobs_found;
             onRefresh();
           }
 
           if (statusRes.status === 'completed') {
-            finish('🎉 Търсенето завърши! Обновяване на списъка с нови позиции...');
+            finish('🎉 Търсенето завърши! Обновяване на списъка с нови позиции...', true);
           } else if (statusRes.status === 'failed') {
-            finish(`⚠️ Търсенето приключи с грешка${statusRes.error ? `: ${statusRes.error}` : ''}`);
+            finish(`⚠️ Търсенето приключи с грешка${statusRes.error ? `: ${statusRes.error}` : ''}`, false);
           }
         } catch {
-          // Tolerate transient errors (Render cold start / restart); give up after 6 in a row
           errorCount += 1;
           if (errorCount >= 6) {
-            finish('⚠️ Загубена връзка със сървъра. Опреснявам наличните обяви...');
+            finish('⚠️ Загубена връзка със сървъра. Опреснявам наличните обяви...', false);
           }
         }
       }, 2000);
 
-      // Failsafe timeout (AI scoring on a slow Gemini can take a few minutes)
-      failsafe = setTimeout(() => finish('⏱️ Търсенето отне твърде дълго. Показвам намерените обяви.'), 240000);
+      failsafe = setTimeout(
+        () => finish('⏱️ Търсенето отне твърде дълго. Показвам намерените обяви.', true),
+        240000
+      );
     } catch (err: any) {
       console.error('Failed to start search:', err);
-      setSearchLog(`⚠️ Грешка: ${err.message || 'Неуспешна заявка'}`);
+      const errMsg = err?.message || 'Неуспешна заявка към бекенда';
+      setSearchLog(`⚠️ Грешка: ${errMsg}`);
+      showError(`Грешка при търсене: ${errMsg}`);
       setTimeout(() => setIsSearching(false), 5000);
     }
   };
@@ -206,7 +228,7 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
     return Array.from(set).sort();
   }, [jobs]);
 
-  // Filtered Jobs (with a safety net: if the tags match nothing, show everything else)
+  // Filtered Jobs with debounced input and tags matching
   const { filteredJobs, tagsIgnored } = useMemo(() => {
     const matchesTags = (job: Job) => {
       const textCorpus = `${job.title || ''} ${job.company || ''} ${job.location || ''} ${(job.matched_skills || []).join(' ')} ${job.search_keyword || ''} ${job.description || ''}`.toLowerCase();
@@ -220,9 +242,9 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
     };
 
     const passesOtherFilters = (job: Job) => {
-      // Input value realtime filter
-      if (inputValue.trim()) {
-        const query = inputValue.toLowerCase().trim();
+      // Debounced search query
+      if (debouncedInput.trim()) {
+        const query = debouncedInput.toLowerCase().trim();
         const matchesInput =
           (job.title || '').toLowerCase().includes(query) ||
           (job.company || '').toLowerCase().includes(query) ||
@@ -242,6 +264,18 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
 
       // Only with Salary
       if (onlyWithSalary && !job.salary) {
+        return false;
+      }
+
+      // Min Salary Filter
+      if (minSalary > 0) {
+        const sal = (job.salary || '').replace(/[^0-9]/g, '');
+        const val = sal ? parseInt(sal, 10) : 0;
+        if (val < minSalary) return false;
+      }
+
+      // Status Filter
+      if (statusFilter !== 'all' && (job.status || 'new') !== statusFilter) {
         return false;
       }
 
@@ -273,28 +307,39 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
       return { filteredJobs: base, tagsIgnored: true };
     }
     return { filteredJobs: tagged, tagsIgnored: false };
-  }, [jobs, tags, inputValue, onlyRemote, onlyWithSalary, sourceFilter, categoryFilter, minScoreFilter]);
+  }, [
+    jobs,
+    tags,
+    debouncedInput,
+    onlyRemote,
+    onlyWithSalary,
+    minSalary,
+    statusFilter,
+    sourceFilter,
+    categoryFilter,
+    minScoreFilter,
+  ]);
 
   return (
     <div className="space-y-6">
       {/* Search Header Bar with Tag Input & Search Button */}
-      <div className="p-4 md:p-6 rounded-2xl bg-slate-900/80 border border-slate-800 shadow-xl backdrop-blur-md">
+      <div className="p-4 md:p-6 rounded-2xl bg-card/80 border border-card-border shadow-xl backdrop-blur-md">
         <div className="flex flex-col md:flex-row gap-3 items-stretch">
           {/* Smart Tags Input Container */}
-          <div className="flex-1 flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-slate-950/70 border border-slate-700/60 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
-            <Search className="w-5 h-5 text-slate-400 ml-1.5 flex-shrink-0" />
+          <div className="flex-1 flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-background border border-card-border focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20 transition-all">
+            <Search className="w-5 h-5 text-muted-foreground ml-1.5 flex-shrink-0" />
 
             {/* Render Badges for Tags */}
             {tags.map((tag, idx) => (
               <span
                 key={idx}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-blue-600/20 text-blue-300 border border-blue-500/30 animate-in fade-in duration-200"
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-accent/15 text-accent border border-accent/30 animate-in fade-in duration-200"
               >
                 <span>{tag}</span>
                 <button
                   type="button"
                   onClick={() => handleRemoveTag(idx)}
-                  className="hover:text-red-400 hover:bg-blue-900/40 rounded p-0.5 transition-colors"
+                  className="hover:text-rose-400 hover:bg-black/10 rounded p-0.5 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -307,8 +352,12 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={tags.length === 0 ? 'Въведи ключови думи (напр. AI Engineer, Python)...' : 'Добави още тагове със запетая...'}
-              className="flex-1 min-w-[160px] bg-transparent text-sm text-slate-100 placeholder-slate-500 focus:outline-none px-2 py-1"
+              placeholder={
+                tags.length === 0
+                  ? 'Въведи ключови думи (напр. AI Engineer, Python)...'
+                  : 'Добави още тагове със запетая...'
+              }
+              className="flex-1 min-w-[160px] bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none px-2 py-1"
             />
           </div>
 
@@ -338,9 +387,9 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
         </div>
 
         {/* Quick Suggestion Pills */}
-        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-slate-800/60 text-xs text-slate-400">
-          <span className="font-medium text-slate-400 flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5 text-blue-400" /> Бързи тагове:
+        <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-card-border text-xs text-muted-foreground">
+          <span className="font-medium flex items-center gap-1">
+            <Sparkles className="w-3.5 h-3.5 text-accent" /> Бързи тагове:
           </span>
           {['AI Engineer', 'Python', 'Agentic AI', 'Machine Learning', 'Data Scientist', 'Remote'].map((sug) => {
             const isAdded = tags.some((t) => t.toLowerCase() === sug.toLowerCase());
@@ -352,8 +401,8 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
                 disabled={isAdded}
                 className={`px-2.5 py-0.5 rounded-md transition-colors ${
                   isAdded
-                    ? 'bg-slate-800 text-slate-400 cursor-default'
-                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/50'
+                    ? 'bg-muted text-muted-foreground cursor-default'
+                    : 'bg-card text-foreground hover:bg-muted border border-card-border'
                 }`}
               >
                 + {sug}
@@ -369,95 +418,179 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
           onComplete={() => onRefresh()}
         />
 
-        {/* Quick Filter Controls */}
-        <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-slate-800/80">
-          {/* Remote Toggle */}
-          <button
-            type="button"
-            onClick={() => setOnlyRemote(!onlyRemote)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-all ${
-              onlyRemote
-                ? 'bg-blue-600/20 text-blue-300 border-blue-500/50 shadow-sm shadow-blue-500/20'
-                : 'bg-slate-800/60 text-slate-400 border-slate-700/50 hover:text-slate-200'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>Само Remote</span>
-          </button>
-
-          {/* Salary Toggle */}
-          <button
-            type="button"
-            onClick={() => setOnlyWithSalary(!onlyWithSalary)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-all ${
-              onlyWithSalary
-                ? 'bg-amber-600/20 text-amber-300 border-amber-500/50 shadow-sm shadow-amber-500/20'
-                : 'bg-slate-800/60 text-slate-400 border-slate-700/50 hover:text-slate-200'
-            }`}
-          >
-            <Coins className="w-3.5 h-3.5" />
-            <span>Със заплата</span>
-          </button>
-
-          {/* Source Dropdown */}
-          <select
-            value={sourceFilter}
-            onChange={(e) => setSourceFilter(e.target.value)}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/60 text-slate-300 border border-slate-700/50 focus:outline-none focus:border-blue-500"
-          >
-            <option value="all">Всички източници</option>
-            {availableSources.map((src) => (
-              <option key={src} value={src}>
-                {src.toUpperCase()}
-              </option>
-            ))}
-          </select>
-
-          {/* Category Dropdown */}
-          {availableCategories.length > 0 && (
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/60 text-slate-300 border border-slate-700/50 focus:outline-none focus:border-blue-500 max-w-[180px] truncate"
+        {/* Filters and View Controls Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-4 pt-3 border-t border-card-border">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Remote Toggle */}
+            <button
+              type="button"
+              onClick={() => setOnlyRemote(!onlyRemote)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-all ${
+                onlyRemote
+                  ? 'bg-accent/20 text-accent border-accent/40 shadow-sm'
+                  : 'bg-card text-muted-foreground border-card-border hover:text-foreground'
+              }`}
             >
-              <option value="all">Всички категории</option>
-              {availableCategories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
+              <Globe className="w-3.5 h-3.5" />
+              <span>Само Remote</span>
+            </button>
+
+            {/* Salary Toggle */}
+            <button
+              type="button"
+              onClick={() => setOnlyWithSalary(!onlyWithSalary)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 border transition-all ${
+                onlyWithSalary
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-sm'
+                  : 'bg-card text-muted-foreground border-card-border hover:text-foreground'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5" />
+              <span>Със заплата</span>
+            </button>
+
+            {/* Source Dropdown */}
+            <select
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-card text-foreground border border-card-border focus:outline-none focus:border-accent"
+            >
+              <option value="all">Всички източници</option>
+              {availableSources.map((src) => (
+                <option key={src} value={src}>
+                  {src.toUpperCase()}
                 </option>
               ))}
             </select>
-          )}
 
-          {/* Min AI Score Dropdown */}
-          <select
-            value={minScoreFilter}
-            onChange={(e) => setMinScoreFilter(Number(e.target.value))}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/60 text-slate-300 border border-slate-700/50 focus:outline-none focus:border-blue-500"
-          >
-            <option value={0}>Всички AI оценки</option>
-            <option value={70}>⭐ 70%+ рейтинг</option>
-            <option value={80}>🔥 80%+ висок рейтинг</option>
-            <option value={90}>🚀 90%+ идеален мач</option>
-          </select>
+            {/* Category Dropdown */}
+            {availableCategories.length > 0 && (
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-card text-foreground border border-card-border focus:outline-none focus:border-accent max-w-[180px] truncate"
+              >
+                <option value="all">Всички категории</option>
+                {availableCategories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+            )}
 
-          {/* Refresh Button */}
-          <button
-            type="button"
-            onClick={onRefresh}
-            title="Опресни списъка"
-            className="p-1.5 rounded-lg bg-slate-800/60 text-slate-400 hover:text-slate-200 border border-slate-700/50 transition-colors ml-auto"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+            {/* Min AI Score Dropdown */}
+            <select
+              value={minScoreFilter}
+              onChange={(e) => setMinScoreFilter(Number(e.target.value))}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-card text-foreground border border-card-border focus:outline-none focus:border-accent"
+            >
+              <option value={0}>Всички AI оценки</option>
+              <option value={70}>⭐ 70%+ рейтинг</option>
+              <option value={80}>🔥 80%+ висок рейтинг</option>
+              <option value={90}>🚀 90%+ идеален мач</option>
+            </select>
+
+            {/* Advanced Filters Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className={`p-1.5 rounded-lg border text-xs flex items-center gap-1 transition-colors ${
+                showAdvancedFilters
+                  ? 'bg-accent/20 border-accent/40 text-accent'
+                  : 'bg-card border-card-border text-muted-foreground hover:text-foreground'
+              }`}
+              title="Допълнителни филтри"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Right Toolbar: View Mode & Refresh */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center p-0.5 rounded-xl bg-card border border-card-border">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-all ${
+                  viewMode === 'list'
+                    ? 'bg-accent text-on-accent shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Списъчен изглед"
+              >
+                <LayoutList className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Списък</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('kanban')}
+                className={`p-1.5 rounded-lg text-xs font-medium flex items-center gap-1 transition-all ${
+                  viewMode === 'kanban'
+                    ? 'bg-accent text-on-accent shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                title="Kanban табло"
+              >
+                <Kanban className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Kanban</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={onRefresh}
+              title="Опресни списъка"
+              className="p-1.5 rounded-lg bg-card text-muted-foreground hover:text-foreground border border-card-border transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
+
+        {/* Collapsible Advanced Filters (Status + Min Salary) */}
+        {showAdvancedFilters && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-card-border/60 animate-in fade-in duration-150">
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                Статус на кандидатстване
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg text-xs font-medium bg-card text-foreground border border-card-border focus:outline-none focus:border-accent"
+              >
+                <option value="all">Всички статуси</option>
+                <option value="new">🆕 Нови</option>
+                <option value="applied">📨 Кандидатствал</option>
+                <option value="interview">💬 Интервю</option>
+                <option value="offer">🎉 Оферта</option>
+                <option value="rejected">❌ Отхвърлен</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-muted-foreground mb-1">
+                Минимална заплата (€ / лв.)
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="500"
+                value={minSalary || ''}
+                onChange={(e) => setMinSalary(Number(e.target.value) || 0)}
+                placeholder="напр. 3000"
+                className="w-full px-3 py-1.5 rounded-lg text-xs font-medium bg-card text-foreground border border-card-border focus:outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Results Header Count */}
-      <div className="flex items-center justify-between text-xs text-slate-400 px-1">
+      <div className="flex items-center justify-between text-xs text-muted-foreground px-1">
         <span>
-          Показани <strong className="text-slate-200">{filteredJobs.length}</strong> от общо{' '}
-          <strong className="text-slate-200">{jobs.length}</strong> позиции в базата
+          Показани <strong className="text-foreground">{filteredJobs.length}</strong> от общо{' '}
+          <strong className="text-foreground">{jobs.length}</strong> позиции в базата
         </span>
         {filteredJobs.length < jobs.length && (
           <button
@@ -468,10 +601,12 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
               setOnlyRemote(false);
               setOnlyWithSalary(false);
               setSourceFilter('all');
+              setStatusFilter('all');
               setCategoryFilter('all');
               setMinScoreFilter(0);
+              setMinSalary(0);
             }}
-            className="text-blue-400 hover:underline"
+            className="text-accent hover:underline font-medium"
           >
             Изчисти филтрите
           </button>
@@ -484,8 +619,14 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
         </div>
       )}
 
-      {/* Clean Vertical Job List */}
-      {filteredJobs.length > 0 ? (
+      {/* Content: List or Kanban */}
+      {viewMode === 'kanban' ? (
+        <KanbanBoard
+          jobs={filteredJobs}
+          onSelectJob={onSelectJob}
+          onStatusChange={onStatusChange}
+        />
+      ) : filteredJobs.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredJobs.map((job) => (
             <JobCard
@@ -497,18 +638,20 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
           ))}
         </div>
       ) : (
-        <div className="text-center py-16 px-4 rounded-2xl bg-slate-900/40 border border-dashed border-slate-800">
-          <div className="w-12 h-12 rounded-full bg-slate-800/80 text-slate-500 mx-auto flex items-center justify-center mb-3">
+        <div className="text-center py-16 px-4 rounded-2xl bg-card/40 border border-dashed border-card-border">
+          <div className="w-12 h-12 rounded-full bg-muted text-muted-foreground mx-auto flex items-center justify-center mb-3">
             <Search className="w-6 h-6" />
           </div>
-          <h3 className="text-base font-semibold text-slate-200 mb-1">Няма намерени обяви по тези критерии</h3>
-          <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">
+          <h3 className="text-base font-semibold text-foreground mb-1">
+            Няма намерени обяви по тези критерии
+          </h3>
+          <p className="text-xs text-muted-foreground max-w-md mx-auto mb-4">
             Опитай да премахнеш някой таг или натисни бутона <strong>„🚀 Търси“</strong> за сканиране на платформите на живо.
           </p>
           <button
             type="button"
             onClick={handleStartSearch}
-            className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-500 shadow-md shadow-blue-600/30 transition-all inline-flex items-center gap-1.5"
+            className="px-4 py-2 rounded-xl text-xs font-semibold bg-accent text-on-accent hover:opacity-90 shadow-md transition-all inline-flex items-center gap-1.5"
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>Стартирай ново търсене</span>

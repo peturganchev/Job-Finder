@@ -22,6 +22,7 @@ import { apiStartSearch, apiUpdateSettings } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { TerminalLogs } from './TerminalLogs';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 interface SearchViewProps {
   onViewJobs: () => void;
@@ -42,6 +43,7 @@ const ACTIVE_TASK_KEY = 'jobfinder_active_search_task_id';
 
 export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }) => {
   const { user, session } = useAuth();
+  const { showSuccess, showError } = useToast();
   const storageKey = getStorageKey(user?.id);
 
   const [selectedSources, setSelectedSources] = useState<string[]>([
@@ -275,10 +277,12 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }
     try {
       await saveKeywordsToDb(keywords);
       setSaveKeywordsSuccess(true);
+      showSuccess('Ключовите думи са запазени в профила!');
       setTimeout(() => setSaveKeywordsSuccess(false), 3000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Грешка при запис в Supabase.';
       setErrorMsg(msg);
+      showError(msg);
     } finally {
       setIsSavingKeywords(false);
     }
@@ -286,7 +290,9 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }
 
   const handleStartSearch = async () => {
     if (keywords.length === 0) {
-      setErrorMsg('Моля, въведете поне една ключова дума преди да стартирате търсенето.');
+      const msg = 'Моля, въведете поне една ключова дума преди да стартирате търсенето.';
+      setErrorMsg(msg);
+      showError(msg);
       return;
     }
     setIsStarting(true);
@@ -306,13 +312,16 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }
         session?.access_token
       );
       setActiveTaskId(res.task_id);
+      showSuccess('Търсенето стартира в фонов режим!');
       try {
         localStorage.setItem(ACTIVE_TASK_KEY, res.task_id);
       } catch {
         // ignore
       }
     } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Грешка при стартиране на търсенето.');
+      const msg = err instanceof Error ? err.message : 'Грешка при стартиране на търсенето.';
+      setErrorMsg(msg);
+      showError(msg);
     } finally {
       setIsStarting(false);
     }

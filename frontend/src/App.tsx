@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { ToastProvider } from './context/ToastContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { MobileNav } from './components/MobileNav';
 import { AuthModal } from './components/AuthModal';
 import { WaitlistModal } from './components/WaitlistModal';
 import { WaitlistAdminModal } from './components/WaitlistAdminModal';
-import { JobsListView } from './components/JobsListView';
 import { UnifiedJobsView } from './components/UnifiedJobsView';
 import { JobDetailModal } from './components/JobDetailModal';
 import { SearchView } from './components/SearchView';
@@ -229,7 +229,7 @@ function AppContent() {
     } catch (err) {
       console.error('Failed to load settings in App:', err);
     }
-  }, [session]);
+  }, [session, applyServerTheme]);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/health`)
@@ -379,26 +379,17 @@ function AppContent() {
           <>
             {/* Tab 1: Jobs & Unified / Kanban Dashboard */}
             {currentTab === 'jobs' && (
-              uiMode === 'simple' ? (
-                <UnifiedJobsView
-                  jobs={jobs}
-                  loading={loadingJobs}
-                  onRefresh={loadJobs}
-                  onSelectJob={(j) => setSelectedJob(j)}
-                  onStatusChange={handleStatusChange}
-                  authToken={session?.access_token}
-                  activeSources={activeSources}
-                  maxJobsPerSource={maxJobsPerSource}
-                />
-              ) : (
-                <JobsListView
-                  jobs={jobs}
-                  loading={loadingJobs}
-                  onRefresh={loadJobs}
-                  onSelectJob={(j) => setSelectedJob(j)}
-                  onStatusChange={handleStatusChange}
-                />
-              )
+              <UnifiedJobsView
+                jobs={jobs}
+                loading={loadingJobs}
+                onRefresh={loadJobs}
+                onSelectJob={(j) => setSelectedJob(j)}
+                onStatusChange={handleStatusChange}
+                authToken={session?.access_token}
+                activeSources={activeSources}
+                maxJobsPerSource={maxJobsPerSource}
+                initialViewMode={uiMode === 'pro' ? 'kanban' : 'list'}
+              />
             )}
 
             {/* Tab 2: Autonomous Scraper & Search (Pro Mode only) */}
@@ -498,7 +489,9 @@ export function App() {
   return (
     <AuthProvider>
       <ThemeProvider>
-        <AppContent />
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
       </ThemeProvider>
     </AuthProvider>
   );
