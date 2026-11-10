@@ -332,14 +332,83 @@ export interface GeminiVerifyResponse {
   message: string;
 }
 
-/** Fetch user settings */
+/** Fetch user settings with Supabase direct fallback */
 export async function apiGetSettings(token?: string | null): Promise<SettingsData> {
   const url = `${API_BASE_URL}/api/settings`;
-  const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 5, 2000);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch settings: ${res.statusText}`);
+
+  // Fallback builder from Supabase user_settings
+  const fetchSupabaseFallback = async (): Promise<SettingsData | null> => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+      if (!userId) return null;
+
+      const { data: row } = await supabase
+        .from('user_settings')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!row) return null;
+
+      const rp = row.roadmap_progress || {};
+      const uiPrefs = rp._ui_preferences || {};
+
+      let activeSources = ['dev_bg', 'jobs_bg', 'linkedin', 'euremotejobs', 'hackernews'];
+      if (row.sources && typeof row.sources === 'object') {
+        activeSources = Object.keys(row.sources).filter((k) => row.sources[k]);
+      }
+
+      return {
+        gemini_api_key_masked: row.gemini_api_key ? `${row.gemini_api_key.slice(0, 6)}...${row.gemini_api_key.slice(-4)}` : null,
+        gemini_model: row.gemini_model || 'gemini-3.5-flash',
+        available_models: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-pro'],
+        blacklist_title: row.blacklist_titles || [],
+        blacklist_companies: row.blacklist_companies || [],
+        search_keywords: row.keywords || [],
+        active_sources: activeSources,
+        max_jobs_per_source: row.max_jobs_per_source || uiPrefs.max_jobs_per_source || 25,
+        location: row.location || 'Bulgaria',
+        remote_location: row.remote_location || 'remote',
+        roadmap_progress: rp,
+        ui_mode: row.ui_mode || uiPrefs.ui_mode || 'simple',
+        theme: row.theme || uiPrefs.theme || 'dark',
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  try {
+    const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 3, 1000);
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.warn('[apiGetSettings] FastAPI request failed, checking Supabase fallback:', err);
   }
-  return res.json();
+
+  const sbData = await fetchSupabaseFallback();
+  if (sbData) {
+    return sbData;
+  }
+
+  // Final fallback to defaults so UI never gets stuck in infinite loading spinner!
+  return {
+    gemini_api_key_masked: null,
+    gemini_model: 'gemini-3.5-flash',
+    available_models: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-pro'],
+    blacklist_title: [],
+    blacklist_companies: [],
+    search_keywords: [],
+    active_sources: ['dev_bg', 'jobs_bg', 'linkedin', 'euremotejobs', 'hackernews'],
+    max_jobs_per_source: 25,
+    location: 'Bulgaria',
+    remote_location: 'remote',
+    roadmap_progress: {},
+    ui_mode: 'simple',
+    theme: 'dark',
+  };
 }
 
 /** Update user settings */
