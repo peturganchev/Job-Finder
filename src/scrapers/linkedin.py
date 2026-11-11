@@ -128,6 +128,9 @@ class LinkedInScraper(BaseScraper):
 
             soup = BeautifulSoup(response.text, "html.parser")
 
+            for junk in soup.select("section.similar-jobs, .similar-jobs, section[class*='similar'], aside[class*='people-also-viewed']"):
+                junk.decompose()
+
             desc_elem = soup.select_one(
                 ".show-more-less-html__markup, .description__text, section.show-more-less-html, main article"
             )
@@ -136,7 +139,12 @@ class LinkedInScraper(BaseScraper):
             date_elem = soup.select_one(".posted-time-ago__text, time")
             posted_date = date_elem.get_text(strip=True) if date_elem else None
 
-            sal_elem = soup.select_one("span:contains('€'), span:contains('$'), span:contains('BGN')")
+            sal_elem = soup.select_one(
+                ".top-card-layout .compensation__salary, "
+                ".topcard__flavor--salary, "
+                ".job-details-jobs-unified-top-card__job-insight span, "
+                ".topcard__content-left [class*='salary']"
+            )
             salary = sal_elem.get_text(strip=True) if sal_elem else None
 
             return {
