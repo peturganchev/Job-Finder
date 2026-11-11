@@ -9,6 +9,7 @@ import {
   Users,
   Sun,
   Moon,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -20,6 +21,8 @@ interface NavbarProps {
   onOpenWaitlist: () => void;
   onOpenAdmin: () => void;
   apiHealthy: boolean;
+  apiWaking?: boolean;
+  onWakeBackend?: () => void;
   uiMode?: 'simple' | 'pro';
 }
 
@@ -30,6 +33,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWaitlist,
   onOpenAdmin,
   apiHealthy,
+  apiWaking = false,
+  onWakeBackend,
   uiMode = 'simple',
 }) => {
   const { user, signOut, isWaitlistAdmin } = useAuth();
@@ -100,13 +105,45 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Status Indicators & Auth Actions */}
         <div className="flex items-center gap-3">
           {/* Status Pills */}
-          <div className="hidden lg:flex items-center gap-2 text-xs text-slate-400">
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800">
-              <span className={`w-2 h-2 rounded-full ${apiHealthy ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-              <Server className="w-3 h-3 text-slate-500" />
-              <span>FastAPI</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <button
+              type="button"
+              onClick={!apiHealthy && !apiWaking ? onWakeBackend : undefined}
+              title={
+                apiHealthy
+                  ? 'FastAPI сървърът е онлайн'
+                  : apiWaking
+                  ? 'FastAPI сървърът се събужда...'
+                  : 'Кликнете за събуждане на FastAPI сървъра'
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md transition ${
+                apiHealthy
+                  ? 'bg-slate-950 border border-slate-800 text-slate-300 cursor-default'
+                  : apiWaking
+                  ? 'border border-amber-500/40 bg-amber-500/10 text-amber-300 cursor-wait'
+                  : 'bg-slate-950 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 hover:border-rose-500/40 cursor-pointer'
+              }`}
+            >
+              {apiHealthy ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <Server className="w-3 h-3 text-emerald-400" />
+                  <span>FastAPI</span>
+                </>
+              ) : apiWaking ? (
+                <>
+                  <Loader2 className="w-3 h-3 text-amber-400 animate-spin" />
+                  <span>Събуждане...</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-rose-400" />
+                  <Server className="w-3 h-3 text-rose-400" />
+                  <span>FastAPI • Събуди ⚡</span>
+                </>
+              )}
+            </button>
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-950 border border-slate-800">
               <span className="w-2 h-2 rounded-full bg-teal-400" />
               <Database className="w-3 h-3 text-slate-500" />
               <span>Supabase RLS</span>

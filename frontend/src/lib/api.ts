@@ -106,6 +106,26 @@ export async function apiCheckHealth(): Promise<boolean> {
   }
 }
 
+/**
+ * Polls backend health every 3500ms up to 14 attempts (~50s) to wake cold cloud backends (e.g. Render).
+ */
+export async function apiWakeBackend(
+  onProgress?: (attempt: number, maxAttempts: number) => void
+): Promise<boolean> {
+  const maxAttempts = 14;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const healthy = await apiCheckHealth();
+    if (healthy) {
+      return true;
+    }
+    onProgress?.(attempt, maxAttempts);
+    if (attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, 3500));
+    }
+  }
+  return false;
+}
+
 /** Fetch jobs with optional filtering */
 export async function apiFetchJobs(
   params?: {
@@ -332,68 +352,71 @@ export interface GeminiVerifyResponse {
   message: string;
 }
 
-/** Fetch user settings with Supabase direct fallback */
+/** Fetch user settings: Supabase-first (~150ms), quick FastAPI fetch fallback (2500ms timeout), then sensible defaults */
 export async function apiGetSettings(token?: string | null): Promise<SettingsData> {
-  const url = `${API_BASE_URL}/api/settings`;
+  // 1. FIRST execute the Supabase query against 'user_settings' for immediate response
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    let userId = sessionData?.session?.user?.id;
+    if (!userId && token) {
+      const { data: userData } = await supabase.auth.getUser(token);
+      userId = userData?.user?.id;
+    }
 
-  // Fallback builder from Supabase user_settings
-  const fetchSupabaseFallback = async (): Promise<SettingsData | null> => {
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData?.session?.user?.id;
-      if (!userId) return null;
-
+    if (userId) {
       const { data: row } = await supabase
         .from('user_settings')
         .select('*')
         .eq('user_id', userId)
         .maybeSingle();
 
-      if (!row) return null;
+      if (row) {
+        const rp = row.roadmap_progress || {};
+        const uiPrefs = rp._ui_preferences || {};
 
-      const rp = row.roadmap_progress || {};
-      const uiPrefs = rp._ui_preferences || {};
+        let activeSources = ['dev_bg', 'jobs_bg', 'linkedin', 'euremotejobs', 'hackernews'];
+        if (row.sources && typeof row.sources === 'object') {
+          activeSources = Object.keys(row.sources).filter((k) => row.sources[k]);
+        }
 
-      let activeSources = ['dev_bg', 'jobs_bg', 'linkedin', 'euremotejobs', 'hackernews'];
-      if (row.sources && typeof row.sources === 'object') {
-        activeSources = Object.keys(row.sources).filter((k) => row.sources[k]);
+        return {
+          gemini_api_key_masked: row.gemini_api_key ? `${row.gemini_api_key.slice(0, 6)}...${row.gemini_api_key.slice(-4)}` : null,
+          gemini_model: row.gemini_model || 'gemini-3.5-flash',
+          available_models: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-pro'],
+          blacklist_title: row.blacklist_titles || [],
+          blacklist_companies: row.blacklist_companies || [],
+          search_keywords: row.keywords || [],
+          active_sources: activeSources,
+          max_jobs_per_source: row.max_jobs_per_source || uiPrefs.max_jobs_per_source || 25,
+          location: row.location || 'Bulgaria',
+          remote_location: row.remote_location || 'remote',
+          roadmap_progress: rp,
+          ui_mode: row.ui_mode || uiPrefs.ui_mode || 'simple',
+          theme: row.theme || uiPrefs.theme || 'dark',
+        };
       }
-
-      return {
-        gemini_api_key_masked: row.gemini_api_key ? `${row.gemini_api_key.slice(0, 6)}...${row.gemini_api_key.slice(-4)}` : null,
-        gemini_model: row.gemini_model || 'gemini-3.5-flash',
-        available_models: ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-2.5-pro'],
-        blacklist_title: row.blacklist_titles || [],
-        blacklist_companies: row.blacklist_companies || [],
-        search_keywords: row.keywords || [],
-        active_sources: activeSources,
-        max_jobs_per_source: row.max_jobs_per_source || uiPrefs.max_jobs_per_source || 25,
-        location: row.location || 'Bulgaria',
-        remote_location: row.remote_location || 'remote',
-        roadmap_progress: rp,
-        ui_mode: row.ui_mode || uiPrefs.ui_mode || 'simple',
-        theme: row.theme || uiPrefs.theme || 'dark',
-      };
-    } catch {
-      return null;
     }
-  };
+  } catch (err) {
+    console.warn('[apiGetSettings] Supabase-first query failed:', err);
+  }
 
+  // 2. If Supabase returns no row or user is not signed in, make ONE quick fetch with 2500ms timeout (no retries)
   try {
-    const res = await fetchWithColdStartRetry(url, { headers: getHeaders(token) }, 3, 1000);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2500);
+    const res = await fetch(`${API_BASE_URL}/api/settings`, {
+      headers: getHeaders(token),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
     if (res.ok) {
       return await res.json();
     }
   } catch (err) {
-    console.warn('[apiGetSettings] FastAPI request failed, checking Supabase fallback:', err);
+    console.warn('[apiGetSettings] Quick FastAPI fetch failed/timed out:', err);
   }
 
-  const sbData = await fetchSupabaseFallback();
-  if (sbData) {
-    return sbData;
-  }
-
-  // Final fallback to defaults so UI never gets stuck in infinite loading spinner!
+  // 3. Return sensible defaults immediately
   return {
     gemini_api_key_masked: null,
     gemini_model: 'gemini-3.5-flash',

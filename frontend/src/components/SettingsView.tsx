@@ -55,7 +55,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
   const { showSuccess, showError } = useToast();
 
   // Settings State
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
+  void loading;
+  void setLoading;
   const [saving, setSaving] = useState<boolean>(false);
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -122,7 +124,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
 
   // Load settings on mount
   useEffect(() => {
-    setLoading(true);
     apiGetSettings(session?.access_token)
       .then((data: SettingsData) => {
         if (data.ui_mode) {
@@ -161,9 +162,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
       })
       .catch((err) => {
         console.error('Failed to load settings:', err);
-      })
-      .finally(() => {
-        setLoading(false);
       });
   }, [session, applyServerTheme]);
 
@@ -291,15 +289,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
       setSaving(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="py-20 flex flex-col items-center justify-center space-y-3">
-        <Loader2 className="w-8 h-8 animate-spin text-emerald-400" />
-        <p className="text-xs text-slate-400">Зареждане на системните настройки...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-200">

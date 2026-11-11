@@ -67,5 +67,20 @@ export default {
 
     // 2. Всичко останало се сервира като React SPA от статичните активи на Worker-а
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(event: any, env: Env, ctx: any): Promise<void> {
+    const backendUrl = env.BACKEND_API_URL;
+    if (!backendUrl) return;
+    const cleanBase = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
+    try {
+      await fetch(`${cleanBase}/api/health`, {
+        headers: {
+          "User-Agent": "JobFinder-KeepAlive/1.0"
+        }
+      });
+    } catch (err) {
+      console.warn('Keep-alive ping error:', err);
+    }
   }
 };
