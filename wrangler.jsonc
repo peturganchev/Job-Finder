@@ -6,6 +6,9 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "triggers": {
+    "crons": ["*/12 * * * *"]
+  },
   "assets": {
     "directory": "./frontend/dist",
     "binding": "ASSETS",

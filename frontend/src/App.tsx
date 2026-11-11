@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
-import { ToastProvider } from './context/ToastContext';
+import { ToastProvider, useToast } from './context/ToastContext';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { MobileNav } from './components/MobileNav';
@@ -15,7 +15,7 @@ import { ProfileView } from './components/ProfileView';
 import { InsightsView } from './components/InsightsView';
 import { SettingsView } from './components/SettingsView';
 import { RoadmapPortfolioView } from './components/RoadmapPortfolioView';
-import { apiFetchJobs, apiUpdateJobStatus, apiDeleteJob, apiFetchMarketStats, apiGetSettings, apiCheckHealth } from './lib/api';
+import { apiFetchJobs, apiUpdateJobStatus, apiDeleteJob, apiFetchMarketStats, apiGetSettings, apiCheckHealth, apiWakeBackend } from './lib/api';
 import type { Job, ApplicationStatus, MarketStats, UIMode } from './types';
 import { Sparkles, Lock, LogIn, Cpu } from 'lucide-react';
 
@@ -23,6 +23,7 @@ import { Sparkles, Lock, LogIn, Cpu } from 'lucide-react';
 function AppContent() {
   const { user, session, loading: authLoading } = useAuth();
   const { applyServerTheme } = useTheme();
+  const { showSuccess, showError, showInfo } = useToast();
 
   // 1. Detect if the user arrived via registration/invite link (?register=true, #register, or #type=invite)
   const initialInvite = (() => {
@@ -119,8 +120,9 @@ function AppContent() {
   const [marketStats, setMarketStats] = useState<MarketStats | null>(null);
   const [loadingStats, setLoadingStats] = useState<boolean>(false);
 
-  // FastAPI health check
+  // FastAPI health check & wakeup state
   const [apiHealthy, setApiHealthy] = useState<boolean>(false);
+  const [apiWaking, setApiWaking] = useState<boolean>(false);
 
   // Always use the latest access token without re-creating callbacks on every token refresh
   const tokenRef = useRef<string | undefined>(session?.access_token);
@@ -146,6 +148,31 @@ function AppContent() {
       if (requestId === jobsRequestId.current) setLoadingJobs(false);
     }
   }, []);
+
+  // Wake FastAPI backend on Render
+  const handleWakeBackend = useCallback(async () => {
+    if (apiWaking || apiHealthy) return;
+    setApiWaking(true);
+    showInfo('⚡ Стартиране на FastAPI сървъра в Render... Обикновено отнема ~35-45 секунди.');
+    try {
+      const ok = await apiWakeBackend((attempt, max) => {
+        console.log(`[FastAPI Wakeup] Attempt ${attempt}/${max}...`);
+      });
+      if (ok) {
+        setApiHealthy(true);
+        setApiWaking(false);
+        showSuccess('✅ FastAPI сървърът е онлайн и готов за търсене!');
+        loadJobs();
+      } else {
+        setApiWaking(false);
+        showError('⚠️ Сървърът се забави. Моля, опитайте отново след малко.');
+      }
+    } catch (err) {
+      console.error('Error waking backend:', err);
+      setApiWaking(false);
+      showError('⚠️ Възникна грешка при събуждане на сървъра.');
+    }
+  }, [apiWaking, apiHealthy, showInfo, showSuccess, showError, loadJobs]);
 
   // Load market statistics (with deduplication support)
   const loadStats = useCallback(async (deduplicate: boolean = true) => {
@@ -233,11 +260,21 @@ function AppContent() {
     }
   }, [applyServerTheme]);
 
+  // Initial health check & auto-wake on mount
+  const wakeTriggeredRef = useRef(false);
   useEffect(() => {
+    if (wakeTriggeredRef.current) return;
+    wakeTriggeredRef.current = true;
     apiCheckHealth().then((isHealthy) => {
-      if (isHealthy) setApiHealthy(true);
+      if (isHealthy) {
+        setApiHealthy(true);
+      } else {
+        handleWakeBackend();
+      }
     });
+  }, [handleWakeBackend]);
 
+  useEffect(() => {
     if (user) {
       loadJobs();
       const timer = setTimeout(() => {
@@ -316,6 +353,8 @@ function AppContent() {
         onOpenWaitlist={() => setIsWaitlistOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
         apiHealthy={apiHealthy}
+        apiWaking={apiWaking}
+        onWakeBackend={handleWakeBackend}
         uiMode={uiMode}
       />
 
