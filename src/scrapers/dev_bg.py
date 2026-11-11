@@ -93,8 +93,17 @@ class DevBgScraper(BaseScraper):
                     location_parts = [le.get_text(strip=True) for le in loc_elems if le.get_text(strip=True)]
                     location = " / ".join(location_parts) if location_parts else "София / Remote"
 
-                    salary_elem = card.select_one(".salary, .badge-salary, [class*='salary']")
-                    salary = salary_elem.get_text(strip=True) if salary_elem else None
+                    salary = None
+                    sal_elem = card.select_one(".badge.blue, .badge-salary, span.badge:has(img[src*='neto']), .salary")
+                    if not sal_elem:
+                        for b in card.select(".tags-wrap .badge, .badge"):
+                            if any(cur in b.get_text() for cur in ["€", "лв", "BGN", "$"]):
+                                sal_elem = b
+                                break
+                    if sal_elem:
+                        sal_m = re.search(r'(\d[\d\s]*(?:-\s*\d[\d\s]*)?\s*(?:€|лв|BGN|EUR|\$|\bUSD\b))', sal_elem.get_text())
+                        if sal_m:
+                            salary = sal_m.group(1).strip()
 
                     date_elem = card.select_one("span.date, time")
                     posted_date = date_elem.get_text(strip=True) if date_elem else None
@@ -136,14 +145,24 @@ class DevBgScraper(BaseScraper):
                 html = resp.text
 
             soup = BeautifulSoup(html, "html.parser")
+            # Remove related job cards to avoid leaking salaries from other recommendations
+            for rj in soup.select(".related-job, [class*='related-job'], .component-job-card"):
+                rj.decompose()
+
             desc_elem = soup.select_one("div.container-single-job .box, div.box, div.job-description, article")
             description = desc_elem.get_text(separator="\n", strip=True) if desc_elem else ""
 
             date_elem = soup.select_one("time, span.posted-date, span.date")
             posted_date = date_elem.get_text(strip=True) if date_elem else None
 
-            salary_elem = soup.select_one("div.salary, span.salary-range")
-            salary = salary_elem.get_text(strip=True) if salary_elem else None
+            salary = None
+            header_badges = soup.select(".container-single-job .tags-wrap .badge, .container-single-job .badge.blue")
+            for b in header_badges:
+                if any(cur in b.get_text() for cur in ["€", "лв", "BGN", "$"]) or b.select_one("img[src*='neto']"):
+                    sal_m = re.search(r'(\d[\d\s]*(?:-\s*\d[\d\s]*)?\s*(?:€|лв|BGN|EUR|\$|\bUSD\b))', b.get_text())
+                    if sal_m:
+                        salary = sal_m.group(1).strip()
+                        break
 
             return {
                 "description": description,
