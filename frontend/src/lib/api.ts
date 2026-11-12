@@ -594,11 +594,14 @@ export async function apiUpdateSettings(
 }
 
 /** Verify a Gemini API Key */
-export async function apiVerifyGeminiKey(apiKey: string): Promise<GeminiVerifyResponse> {
+export async function apiVerifyGeminiKey(
+  apiKey: string,
+  token?: string | null
+): Promise<GeminiVerifyResponse> {
   const url = `${API_BASE_URL}/api/settings/verify-gemini`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: getHeaders(),
+    headers: getHeaders(token),
     body: JSON.stringify({ api_key: apiKey }),
   });
   if (!res.ok) {

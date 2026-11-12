@@ -179,7 +179,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onOpenAdmin, uiMode,
     setVerifyingKey(true);
     setKeyValidationStatus(null);
     try {
-      const res = await apiVerifyGeminiKey(keyToTest);
+      const res = await apiVerifyGeminiKey(keyToTest, session?.access_token);
       setKeyValidationStatus({
         valid: res.valid,
         message: res.message,
