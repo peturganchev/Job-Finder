@@ -60,10 +60,14 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
     keywords JSONB DEFAULT '["AI Engineer", "Agentic", "LLM", "Generative AI"]'::jsonb,
     location TEXT DEFAULT 'Bulgaria',
     remote_location TEXT DEFAULT 'Worldwide',
-    sources JSONB DEFAULT '{"dev_bg": true, "jobs_bg": true, "linkedin": true, "himalayas": true, "euremotejobs": true, "hackernews": true}'::jsonb,
+    sources JSONB DEFAULT '{"dev_bg": true, "jobs_bg": true, "linkedin": true, "euremotejobs": true, "hackernews": true}'::jsonb,
     blacklist_titles JSONB DEFAULT '["Python Developer", "Python Dev", "Backend", "Frontend"]'::jsonb,
     blacklist_companies JSONB DEFAULT '[]'::jsonb,
     roadmap_progress JSONB DEFAULT '{}'::jsonb,
+    profile_data JSONB DEFAULT '{}'::jsonb,
+    ui_mode TEXT DEFAULT 'simple',
+    theme TEXT DEFAULT 'dark',
+    max_jobs_per_source INTEGER DEFAULT 25,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -71,8 +75,12 @@ CREATE TABLE IF NOT EXISTS public.user_settings (
 -- 5. Опашка за задачи за скрейпване (Scrape Tasks Queue)
 CREATE TABLE IF NOT EXISTS public.scrape_tasks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    task_id TEXT UNIQUE,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'running', 'completed', 'failed'
+    progress INTEGER DEFAULT 0,
+    logs JSONB DEFAULT '[]'::jsonb,
+    jobs_found INTEGER DEFAULT 0,
     sources JSONB DEFAULT '[]'::jsonb,
     keywords JSONB DEFAULT '[]'::jsonb,
     clean_choice TEXT DEFAULT 'keep_existing',
@@ -83,6 +91,7 @@ CREATE TABLE IF NOT EXISTS public.scrape_tasks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scrape_tasks_status ON public.scrape_tasks(status);
+CREATE INDEX IF NOT EXISTS idx_scrape_tasks_task_id ON public.scrape_tasks(task_id);
 
 -- ==============================================================================
 -- 6. Row Level Security (RLS) Политики за сигурност
@@ -94,10 +103,13 @@ ALTER TABLE public.user_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scrape_tasks ENABLE ROW LEVEL SECURITY;
 
--- 6.1. Политики за 'jobs': Всички (анонимни и автентикирани) могат да четат и добавят обяви в общия каталог
+-- 6.1. Политики за 'jobs'
 DROP POLICY IF EXISTS "Allow authenticated users to read jobs" ON public.jobs;
 DROP POLICY IF EXISTS "Allow authenticated users to insert jobs" ON public.jobs;
 DROP POLICY IF EXISTS "Allow authenticated users to update jobs" ON public.jobs;
+DROP POLICY IF EXISTS "Allow read jobs" ON public.jobs;
+DROP POLICY IF EXISTS "Allow insert jobs" ON public.jobs;
+DROP POLICY IF EXISTS "Allow update jobs" ON public.jobs;
 
 CREATE POLICY "Allow read jobs"
     ON public.jobs FOR SELECT
@@ -106,16 +118,15 @@ CREATE POLICY "Allow read jobs"
 
 CREATE POLICY "Allow insert jobs"
     ON public.jobs FOR INSERT
-    TO anon, authenticated
+    TO authenticated
     WITH CHECK (true);
 
 CREATE POLICY "Allow update jobs"
     ON public.jobs FOR UPDATE
-    TO anon, authenticated
+    TO authenticated
     USING (true);
 
--- 6.2. Политики за 'user_jobs': Всички операции са разрешени за anon и authenticated,
--- тъй като защитата и мулти-тенант изолацията по потребители се гарантира строго от Python бекенда
+-- 6.2. Политики за 'user_jobs'
 DROP POLICY IF EXISTS "Users can only read own job interactions" ON public.user_jobs;
 DROP POLICY IF EXISTS "Users can only insert own job interactions" ON public.user_jobs;
 DROP POLICY IF EXISTS "Users can only update own job interactions" ON public.user_jobs;
@@ -125,25 +136,25 @@ DROP POLICY IF EXISTS "Allow insert user_jobs" ON public.user_jobs;
 DROP POLICY IF EXISTS "Allow update user_jobs" ON public.user_jobs;
 DROP POLICY IF EXISTS "Allow delete user_jobs" ON public.user_jobs;
 
-CREATE POLICY "Allow read user_jobs"
+CREATE POLICY "Users can only read own job interactions"
     ON public.user_jobs FOR SELECT
-    TO anon, authenticated
-    USING (true);
+    TO authenticated
+    USING (auth.uid() = user_id);
 
-CREATE POLICY "Allow insert user_jobs"
+CREATE POLICY "Users can only insert own job interactions"
     ON public.user_jobs FOR INSERT
-    TO anon, authenticated
-    WITH CHECK (true);
+    TO authenticated
+    WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Allow update user_jobs"
+CREATE POLICY "Users can only update own job interactions"
     ON public.user_jobs FOR UPDATE
-    TO anon, authenticated
-    USING (true);
+    TO authenticated
+    USING (auth.uid() = user_id);
 
-CREATE POLICY "Allow delete user_jobs"
+CREATE POLICY "Users can only delete own job interactions"
     ON public.user_jobs FOR DELETE
-    TO anon, authenticated
-    USING (true);
+    TO authenticated
+    USING (auth.uid() = user_id);
 
 -- 6.3. Политики за 'user_settings': Всеки потребител вижда/променя САМО своя API ключ и настройки
 CREATE POLICY "Users can only read own settings"
@@ -211,17 +222,52 @@ CREATE INDEX IF NOT EXISTS idx_access_requests_created_at ON public.access_reque
 -- RLS за 'access_requests'
 ALTER TABLE public.access_requests ENABLE ROW LEVEL SECURITY;
 
--- Всеки (включително нелогнати потребители през anon key) може да изпраща заявка (INSERT)
+DROP POLICY IF EXISTS "Allow public insert on access_requests" ON public.access_requests;
+DROP POLICY IF EXISTS "Allow public read access_requests" ON public.access_requests;
+DROP POLICY IF EXISTS "Allow authenticated read access_requests" ON public.access_requests;
+DROP POLICY IF EXISTS "Allow update access_requests" ON public.access_requests;
+DROP POLICY IF EXISTS "Allow authenticated update access_requests" ON public.access_requests;
+DROP POLICY IF EXISTS "Allow delete access_requests" ON public.access_requests;
+DROP POLICY IF EXISTS "Allow authenticated delete access_requests" ON public.access_requests;
+
 CREATE POLICY "Allow public insert on access_requests"
     ON public.access_requests FOR INSERT
     TO anon, authenticated
-    WITH CHECK (true);
+    WITH CHECK (status = 'pending');
 
--- Логнати потребители могат да виждат списъка със заявки
-CREATE POLICY "Allow authenticated read access_requests"
+CREATE POLICY "Allow admin read access_requests"
     ON public.access_requests FOR SELECT
     TO authenticated
-    USING (true);
+    USING ((auth.jwt() ->> 'email') = 'peturganchev93@gmail.com');
+
+CREATE POLICY "Allow admin update access_requests"
+    ON public.access_requests FOR UPDATE
+    TO authenticated
+    USING ((auth.jwt() ->> 'email') = 'peturganchev93@gmail.com')
+    WITH CHECK ((auth.jwt() ->> 'email') = 'peturganchev93@gmail.com');
+
+CREATE POLICY "Allow admin delete access_requests"
+    ON public.access_requests FOR DELETE
+    TO authenticated
+    USING ((auth.jwt() ->> 'email') = 'peturganchev93@gmail.com');
+
+CREATE OR REPLACE FUNCTION public.enforce_waitlist_approval()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF lower(NEW.email) = 'peturganchev93@gmail.com' OR EXISTS (
+        SELECT 1 FROM public.access_requests
+        WHERE lower(email) = lower(NEW.email) AND status = 'approved'
+    ) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'Email % is not approved on the waitlist', NEW.email;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS check_waitlist_before_signup ON auth.users;
+CREATE TRIGGER check_waitlist_before_signup
+    BEFORE INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.enforce_waitlist_approval();
 
 -- ==============================================================================
 -- 9. Глобален каталог 'jobs_bg' (Jobs.bg Master Pool & Categories)
@@ -258,12 +304,5 @@ ON public.jobs_bg FOR SELECT
 USING (true);
 
 DROP POLICY IF EXISTS "Allow authenticated insert on jobs_bg" ON public.jobs_bg;
-CREATE POLICY "Allow authenticated insert on jobs_bg" 
-ON public.jobs_bg FOR INSERT 
-WITH CHECK (true);
-
 DROP POLICY IF EXISTS "Allow authenticated update on jobs_bg" ON public.jobs_bg;
-CREATE POLICY "Allow authenticated update on jobs_bg" 
-ON public.jobs_bg FOR UPDATE 
-USING (true);
 
