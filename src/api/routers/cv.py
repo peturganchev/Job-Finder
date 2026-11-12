@@ -14,9 +14,8 @@ from src.api.schemas import (
     CoverLetterRequest,
     CoverLetterResponse,
 )
-from src.api.dependencies import get_repo, get_analyzer, get_current_user_optional
+from src.api.dependencies import get_repo, get_analyzer, get_current_user_required
 from src.intelligence.cv_parser import CVAIExtractor
-from src.settings_manager import SettingsManager
 
 router = APIRouter()
 
@@ -86,7 +85,8 @@ def _heuristic_cv_extract(text: str) -> Dict[str, Any]:
 async def parse_cv(
     file: Optional[UploadFile] = File(None, description="Uploaded CV in PDF format"),
     text: Optional[str] = Form(None, description="Optional raw text input"),
-    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+    user: Dict[str, Any] = Depends(get_current_user_required),
+    analyzer = Depends(get_analyzer),
 ):
     """
     Parses candidate CV. Accepts either a PDF upload or raw text.
@@ -110,8 +110,7 @@ async def parse_cv(
             detail="No content provided. Please upload a PDF file or provide CV text."
         )
 
-    sm = SettingsManager()
-    api_key = sm.get_api_key()
+    api_key = analyzer.api_key
     parsed_data = {}
 
     if api_key:
@@ -140,7 +139,8 @@ async def parse_cv(
 @router.post("/parse-text", response_model=CVParseResponse, summary="Parse CV from JSON text body")
 def parse_cv_json(
     body: CVTextParseRequest,
-    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+    user: Dict[str, Any] = Depends(get_current_user_required),
+    analyzer = Depends(get_analyzer),
 ):
     """Alternative JSON body endpoint for parsing CV plain text."""
     raw_text = body.text.strip()
@@ -150,8 +150,7 @@ def parse_cv_json(
             detail="CV text cannot be empty."
         )
 
-    sm = SettingsManager()
-    api_key = sm.get_api_key()
+    api_key = analyzer.api_key
     parsed_data = {}
 
     if api_key:

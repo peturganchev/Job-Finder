@@ -14,11 +14,10 @@ from src.api.schemas import (
     StandardMessageResponse,
 )
 from src.api.dependencies import (
-    get_current_user_optional,
+    get_current_user_required,
     get_supabase_client,
     get_service_role_client,
 )
-from src.settings_manager import SettingsManager, AVAILABLE_MODELS
 from src.intelligence.gemini_analyzer import get_available_gemini_models
 
 router = APIRouter()
@@ -32,17 +31,17 @@ def _mask_key(key: Optional[str]) -> Optional[str]:
     return f"{key[:6]}...{key[-4:]}"
 
 
-@router.get("", response_model=SettingsResponse, summary="Get current application and user settings")
-def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)):
-    sm = SettingsManager()
-    local_settings = sm.load()
+DEFAULT_ACTIVE_SOURCES = ["dev_bg", "jobs_bg", "linkedin", "euremotejobs", "hackernews"]
 
-    user_id = user["id"] if user else None
-    access_token = user.get("access_token") if user else None
+
+@router.get("", response_model=SettingsResponse, summary="Get current application and user settings")
+def get_settings(user: Dict[str, Any] = Depends(get_current_user_required)):
+    user_id = user["id"]
+    access_token = user.get("access_token")
     client = get_supabase_client()
 
     db_settings = {}
-    if client and user_id:
+    if client:
         try:
             if access_token:
                 client.postgrest.auth(access_token)
@@ -52,40 +51,14 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
         except Exception as e:
             print(f"⚠️ Error loading Supabase user_settings: {e}")
 
-    # Resolve active API key
-    raw_api_key = (
-        db_settings.get("gemini_api_key")
-        or local_settings.ai.gemini_api_key
-        or os.getenv("GEMINI_API_KEY")
-    )
-
-    gemini_model = (
-        db_settings.get("gemini_model")
-        or local_settings.ai.gemini_model
-        or os.getenv("GEMINI_MODEL")
-        or "gemini-3.5-flash"
-    )
-
+    raw_api_key = db_settings.get("gemini_api_key")
+    gemini_model = db_settings.get("gemini_model") or "gemini-3.5-flash"
     available_models = get_available_gemini_models(raw_api_key)
 
-    blacklist_title = (
-        db_settings.get("blacklist_titles")
-        or local_settings.blacklist_title
-        or []
-    )
-    blacklist_companies = (
-        db_settings.get("blacklist_companies")
-        or local_settings.blacklist_companies
-        or []
-    )
-    if user_id:
-        # For authenticated users, strictly use what is saved in their user_settings (or empty list if none)
-        search_keywords = db_settings.get("keywords") if (db_settings and "keywords" in db_settings and db_settings["keywords"] is not None) else []
-    else:
-        # Fallback to local configuration for unauthenticated guest sessions
-        search_keywords = local_settings.search.keywords or []
+    blacklist_title = db_settings.get("blacklist_titles") or []
+    blacklist_companies = db_settings.get("blacklist_companies") or []
+    search_keywords = db_settings.get("keywords") if (db_settings and "keywords" in db_settings and db_settings["keywords"] is not None) else []
 
-    # Read sources from Supabase if present
     db_sources = db_settings.get("sources") if (db_settings and "sources" in db_settings) else None
     if db_sources:
         if isinstance(db_sources, dict):
@@ -93,27 +66,24 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
         elif isinstance(db_sources, list):
             active_sources = db_sources
         else:
-            active_sources = sm.enabled_sources()
+            active_sources = list(DEFAULT_ACTIVE_SOURCES)
     else:
-        active_sources = sm.enabled_sources()
+        active_sources = list(DEFAULT_ACTIVE_SOURCES)
 
-    # Normalize active_sources to consistent underscore notation ('dev_bg', 'jobs_bg')
     normalized_sources = []
     for s in active_sources:
         norm = str(s).strip().replace(".", "_")
-        if norm not in normalized_sources:
+        if norm != "himalayas" and norm not in normalized_sources:
             normalized_sources.append(norm)
 
-    roadmap_progress = (
-        db_settings.get("roadmap_progress")
-        or local_settings.roadmap_progress
-        or {}
-    )
+    roadmap_progress = db_settings.get("roadmap_progress") or {}
     ui_prefs = roadmap_progress.get("_ui_preferences", {}) if isinstance(roadmap_progress, dict) else {}
 
     ui_mode = db_settings.get("ui_mode") or ui_prefs.get("ui_mode") or "simple"
     theme = db_settings.get("theme") or ui_prefs.get("theme") or "dark"
-    max_jobs = db_settings.get("max_jobs_per_source") or ui_prefs.get("max_jobs_per_source") or local_settings.search.max_jobs_per_source or 25
+    max_jobs = db_settings.get("max_jobs_per_source") or ui_prefs.get("max_jobs_per_source") or 25
+    location = db_settings.get("location") or "Bulgaria"
+    remote_location = db_settings.get("remote_location") or "Europe"
 
     return SettingsResponse(
         gemini_api_key_masked=_mask_key(raw_api_key),
@@ -124,8 +94,8 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
         search_keywords=search_keywords,
         active_sources=normalized_sources,
         max_jobs_per_source=max_jobs,
-        location=local_settings.search.location,
-        remote_location=local_settings.search.remote_location,
+        location=location,
+        remote_location=remote_location,
         roadmap_progress=roadmap_progress,
         ui_mode=ui_mode,
         theme=theme,
@@ -135,42 +105,12 @@ def get_settings(user: Optional[Dict[str, Any]] = Depends(get_current_user_optio
 @router.post("", response_model=StandardMessageResponse, summary="Update user and application settings")
 def update_settings(
     req: SettingsUpdateRequest,
-    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+    user: Dict[str, Any] = Depends(get_current_user_required),
 ):
-    print(f"📥 [update_settings] Incoming request. user_id={user.get('id') if user else None}, email={user.get('email') if user else None}, sources={req.active_sources}")
-    sm = SettingsManager()
-    local_settings = sm.load()
-
-    # Update local settings
-    if req.gemini_api_key is not None:
-        local_settings.ai.gemini_api_key = req.gemini_api_key.strip() or None
-    if req.gemini_model is not None:
-        local_settings.ai.gemini_model = req.gemini_model.strip()
-    if req.blacklist_title is not None:
-        local_settings.blacklist_title = [t.strip() for t in req.blacklist_title if t.strip()]
-    if req.blacklist_companies is not None:
-        local_settings.blacklist_companies = [c.strip() for c in req.blacklist_companies if c.strip()]
-    if req.search_keywords is not None:
-        local_settings.search.keywords = [k.strip() for k in req.search_keywords if k.strip()]
-    if req.max_jobs_per_source is not None:
-        local_settings.search.max_jobs_per_source = req.max_jobs_per_source
-    if req.location is not None:
-        local_settings.search.location = req.location.strip()
-    if req.remote_location is not None:
-        local_settings.search.remote_location = req.remote_location.strip()
-    if req.roadmap_progress is not None:
-        local_settings.roadmap_progress = req.roadmap_progress
-    if req.active_sources is not None:
-        for src in ["dev_bg", "jobs_bg", "linkedin", "euremotejobs", "hackernews"]:
-            setattr(local_settings.sources, src, (src in req.active_sources or src.replace("_", ".") in req.active_sources))
-
-    sm.save(local_settings)
-
-    # Sync to Supabase user_settings table if authenticated
-    user_id = user["id"] if user else None
-    access_token = user.get("access_token") if user else None
+    user_id = user["id"]
+    access_token = user.get("access_token")
     client = get_supabase_client()
-    if client and user_id:
+    if client:
         try:
             if access_token:
                 client.postgrest.auth(access_token)
@@ -187,6 +127,10 @@ def update_settings(
                 update_payload["blacklist_companies"] = [c.strip() for c in req.blacklist_companies if c.strip()]
             if req.search_keywords is not None:
                 update_payload["keywords"] = [k.strip() for k in req.search_keywords if k.strip()]
+            if req.location is not None:
+                update_payload["location"] = req.location.strip()
+            if req.remote_location is not None:
+                update_payload["remote_location"] = req.remote_location.strip()
             if req.roadmap_progress is not None:
                 update_payload["roadmap_progress"] = req.roadmap_progress
             if req.ui_mode is not None:
@@ -198,16 +142,15 @@ def update_settings(
             if req.active_sources is not None:
                 update_payload["sources"] = {
                     src: (src in req.active_sources or src.replace("_", ".") in req.active_sources)
-                    for src in ["dev_bg", "jobs_bg", "linkedin", "euremotejobs", "hackernews"]
+                    for src in DEFAULT_ACTIVE_SOURCES
                 }
 
             try:
-                res = client.table("user_settings").upsert(update_payload, on_conflict="user_id").execute()
+                client.table("user_settings").upsert(update_payload, on_conflict="user_id").execute()
             except Exception as upsert_err:
                 err_str = str(upsert_err).lower()
                 print(f"⚠️ Primary user_settings upsert error: {err_str}")
 
-                # Build fallback payload embedding UI preferences into roadmap_progress if needed
                 fallback_payload = dict(update_payload)
                 cur_rp = fallback_payload.get("roadmap_progress")
                 if not isinstance(cur_rp, dict):
@@ -238,10 +181,9 @@ def update_settings(
 
                 cur_rp["_ui_preferences"] = cur_ui
                 fallback_payload["roadmap_progress"] = cur_rp
-                for k in ["ui_mode", "theme", "max_jobs_per_source"]:
+                for k in ["ui_mode", "theme", "max_jobs_per_source", "location", "remote_location"]:
                     fallback_payload.pop(k, None)
 
-                # Try with service role client if available (bypasses RLS or token renewal issues)
                 srv_client = get_service_role_client()
                 target_client = srv_client or client
 
@@ -260,7 +202,10 @@ def update_settings(
 
 
 @router.post("/verify-gemini", response_model=GeminiVerifyResponse, summary="Verify Google Gemini API Key")
-def verify_gemini_key(req: GeminiVerifyRequest):
+def verify_gemini_key(
+    req: GeminiVerifyRequest,
+    user: Dict[str, Any] = Depends(get_current_user_required),
+):
     key = req.api_key.strip()
     if not key:
         return GeminiVerifyResponse(
