@@ -37,27 +37,59 @@ def test_email_digest_parser_text():
     assert "1000 EUR" in (job2["salary"] or "")
 
 
-def test_inbound_email_endpoint():
+def test_inbound_email_requires_ingest_secret(monkeypatch):
+    monkeypatch.setenv("INGEST_SECRET", "test-secret")
     payload = {
         "content": "[12.10.26★ AI Engineer](https://www.jobs.bg/job/9999999) София; Remote\nPython; PyTorch; LLM\n[AI Labs](https://www.jobs.bg/company/ailabs)",
         "format": "text"
     }
     response = client.post("/api/jobs/inbound-email", json=payload)
+    assert response.status_code == 401
+
+
+def test_inbound_email_endpoint(monkeypatch):
+    monkeypatch.setenv("INGEST_SECRET", "test-secret")
+    monkeypatch.setattr(
+        "src.api.routers.jobs.batch_categorize_jobs",
+        lambda jobs: [{**j, "category": "AI / ML"} for j in jobs],
+    )
+
+    class FakeRepo:
+        def upsert_jobs_bg(self, items):
+            return len(items)
+
+    monkeypatch.setattr("src.api.routers.jobs.get_repository", lambda: FakeRepo())
+
+    payload = {
+        "content": "[12.10.26★ AI Engineer](https://www.jobs.bg/job/9999999) София; Remote\nPython; PyTorch; LLM\n[AI Labs](https://www.jobs.bg/company/ailabs)",
+        "format": "text"
+    }
+    response = client.post(
+        "/api/jobs/inbound-email",
+        json=payload,
+        headers={"X-Ingest-Secret": "test-secret"},
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
     assert data["parsed_count"] == 1
+    assert data["saved_count"] == 1
     assert len(data["sample_jobs"]) == 1
     assert data["sample_jobs"][0]["title"] == "AI Engineer"
     assert data["sample_jobs"][0]["company"] == "AI Labs"
 
 
-def test_inbound_email_empty():
+def test_inbound_email_empty(monkeypatch):
+    monkeypatch.setenv("INGEST_SECRET", "test-secret")
     payload = {
         "content": "Just a general text with no job links",
         "format": "text"
     }
-    response = client.post("/api/jobs/inbound-email", json=payload)
+    response = client.post(
+        "/api/jobs/inbound-email",
+        json=payload,
+        headers={"X-Ingest-Secret": "test-secret"},
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is False

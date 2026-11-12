@@ -56,7 +56,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         console.warn('Неуспешен запис на темата в акаунта:', err)
       );
     },
-    [session?.access_token]
+    [session]
   );
 
   const setTheme = useCallback(

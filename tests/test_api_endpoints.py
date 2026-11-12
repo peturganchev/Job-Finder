@@ -1,17 +1,54 @@
-import os
 import sys
 from pathlib import Path
 
-# Add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import pytest
 from fastapi.testclient import TestClient
 
+from src.api.dependencies import get_current_user_required
 from src.api.main import app
 from src.database.models import Job, ApplicationStatus
 from src.database.repository import get_repository
 
 client = TestClient(app)
+TEST_USER = {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "email": "test@example.com",
+    "access_token": None,
+}
+
+
+@pytest.fixture(autouse=True)
+def offline_auth_and_sqlite(monkeypatch, request):
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+
+    if request.node.name == "test_unauthorized_access_rejected":
+        app.dependency_overrides.clear()
+        yield
+        app.dependency_overrides.clear()
+        return
+
+    app.dependency_overrides[get_current_user_required] = lambda: TEST_USER
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_unauthorized_access_rejected():
+    """Verify unauthenticated and spoofed X-User-Id requests are rejected with 401."""
+    res_no_auth = client.get("/api/jobs")
+    assert res_no_auth.status_code == 401
+
+    res_spoofed = client.get(
+        "/api/jobs",
+        headers={"X-User-Id": "00000000-0000-0000-0000-000000000001"},
+    )
+    assert res_spoofed.status_code == 401
 
 
 def test_root():
@@ -164,8 +201,12 @@ def test_cover_letter():
     print("✅ POST /api/jobs/cover-letter & /api/cv/cover-letter passed")
 
 
-def test_search_task_flow():
+def test_search_task_flow(monkeypatch):
     """Test starting search task and polling its status."""
+    monkeypatch.setattr(
+        "src.api.routers.search.DevBgScraper.search",
+        lambda self, keywords, max_jobs=25: [],
+    )
     start_res = client.post(
         "/api/search/start",
         json={

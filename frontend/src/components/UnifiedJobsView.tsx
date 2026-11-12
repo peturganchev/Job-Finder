@@ -45,6 +45,12 @@ export const UnifiedJobsView: React.FC<UnifiedJobsViewProps> = ({
 
   // View Mode: list vs kanban
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>(initialViewMode);
+  const [prevInitialViewMode, setPrevInitialViewMode] = useState<'list' | 'kanban'>(initialViewMode);
+
+  if (prevInitialViewMode !== initialViewMode) {
+    setPrevInitialViewMode(initialViewMode);
+    setViewMode(initialViewMode);
+  }
 
   // Tags State
   const [tags, setTags] = useState<string[]>(() => {

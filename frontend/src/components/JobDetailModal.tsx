@@ -47,6 +47,15 @@ export const JobDetailModal: React.FC<JobDetailModalProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const jobKey = `${job?.id ?? ''}:${job?.cover_letter ?? ''}`;
+  const [prevJobKey, setPrevJobKey] = useState(jobKey);
+
+  if (prevJobKey !== jobKey) {
+    setPrevJobKey(jobKey);
+    setCoverLetter(job?.cover_letter || null);
+    setErrorMsg(null);
+    setCopied(false);
+  }
 
   if (!isOpen || !job) return null;
 

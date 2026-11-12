@@ -85,17 +85,6 @@ function AppContent() {
     return 'jobs';
   });
 
-  useEffect(() => {
-    try {
-      if (!initialInvite.isInvite) {
-        localStorage.setItem('jobfinder_active_tab', currentTab);
-        window.location.hash = currentTab;
-      }
-    } catch {
-      // ignore
-    }
-  }, [currentTab, initialInvite.isInvite]);
-
   // Modals state initialized directly from URL!
   const [isAuthOpen, setIsAuthOpen] = useState<boolean>(initialInvite.isInvite);
   const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup'>(initialInvite.mode);
@@ -198,6 +187,20 @@ function AppContent() {
     }
   });
 
+  const proOnlyTabs = ['search', 'roadmap', 'insights'];
+  const activeTab = uiMode === 'simple' && proOnlyTabs.includes(currentTab) ? 'jobs' : currentTab;
+
+  useEffect(() => {
+    try {
+      if (!initialInvite.isInvite) {
+        localStorage.setItem('jobfinder_active_tab', activeTab);
+        window.location.hash = activeTab;
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeTab, initialInvite.isInvite]);
+
   const [activeSources, setActiveSources] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('jf_active_sources');
@@ -223,16 +226,6 @@ function AppContent() {
     } catch {}
     return 25;
   });
-
-  // Guard: if in simple mode, redirect pro-only tabs to jobs
-  useEffect(() => {
-    if (uiMode === 'simple') {
-      const proOnlyTabs = ['search', 'roadmap', 'insights'];
-      if (proOnlyTabs.includes(currentTab)) {
-        setCurrentTab('jobs');
-      }
-    }
-  }, [uiMode, currentTab]);
 
   // Load settings on login to sync UI Mode, Sources, and Limits
   const loadSettings = useCallback(async () => {
@@ -274,30 +267,45 @@ function AppContent() {
     });
   }, [handleWakeBackend]);
 
-  useEffect(() => {
-    if (user) {
-      loadJobs();
-      const timer = setTimeout(() => {
-        loadSettings();
-        loadStats();
-      }, 400);
-      return () => clearTimeout(timer);
-    } else {
+  const currentUserId = user?.id ?? null;
+  const [prevAuthUserId, setPrevAuthUserId] = useState<string | null>(currentUserId);
+  if (prevAuthUserId !== currentUserId) {
+    setPrevAuthUserId(currentUserId);
+    if (!currentUserId) {
       setJobs([]);
       setMarketStats(null);
       setLoadingJobs(false);
       setLoadingStats(false);
     }
-  }, [user?.id, loadJobs, loadStats, loadSettings]);
+  }
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const initTimer = setTimeout(() => {
+      loadJobs();
+    }, 0);
+    const timer = setTimeout(() => {
+      loadSettings();
+      loadStats();
+    }, 400);
+    return () => {
+      clearTimeout(initTimer);
+      clearTimeout(timer);
+    };
+  }, [currentUserId, loadJobs, loadStats, loadSettings]);
 
   // Auto-refresh whenever the user returns to the jobs tab
-  const prevTabRef = useRef(currentTab);
+  const prevTabRef = useRef(activeTab);
   useEffect(() => {
-    if (user?.id && currentTab === 'jobs' && prevTabRef.current !== 'jobs') {
-      loadJobs();
+    if (currentUserId && activeTab === 'jobs' && prevTabRef.current !== 'jobs') {
+      const refreshTimer = setTimeout(() => {
+        loadJobs();
+      }, 0);
+      prevTabRef.current = activeTab;
+      return () => clearTimeout(refreshTimer);
     }
-    prevTabRef.current = currentTab;
-  }, [currentTab, user?.id, loadJobs]);
+    prevTabRef.current = activeTab;
+  }, [activeTab, currentUserId, loadJobs]);
 
   // Optimistic Job Status Update
   const handleStatusChange = async (jobId: string | number, newStatus: ApplicationStatus) => {
@@ -347,7 +355,7 @@ function AppContent() {
     <div className="min-h-screen bg-app-bg text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-300">
       {/* Navigation */}
       <Navbar
-        currentTab={currentTab}
+        currentTab={activeTab}
         onSelectTab={setCurrentTab}
         onOpenAuth={() => handleOpenAuth('signin')}
         onOpenWaitlist={() => setIsWaitlistOpen(true)}
@@ -421,7 +429,7 @@ function AppContent() {
         ) : (
           <>
             {/* Tab 1: Jobs & Unified / Kanban Dashboard */}
-            {currentTab === 'jobs' && (
+            {activeTab === 'jobs' && (
               <UnifiedJobsView
                 jobs={jobs}
                 loading={loadingJobs}
@@ -436,7 +444,7 @@ function AppContent() {
             )}
 
             {/* Tab 2: Autonomous Scraper & Search (Pro Mode only) */}
-            {currentTab === 'search' && uiMode === 'pro' && (
+            {activeTab === 'search' && uiMode === 'pro' && (
               <SearchView
                 onViewJobs={() => {
                   setCurrentTab('jobs');
@@ -447,17 +455,17 @@ function AppContent() {
             )}
 
             {/* Tab 3: Skill Roadmap & Portfolio (Pro Mode only) */}
-            {currentTab === 'roadmap' && uiMode === 'pro' && (
+            {activeTab === 'roadmap' && uiMode === 'pro' && (
               <RoadmapPortfolioView />
             )}
 
             {/* Tab 4: Profile & CV Intelligence */}
-            {currentTab === 'profile' && (
+            {activeTab === 'profile' && (
               <ProfileView />
             )}
 
             {/* Tab 5: Market Insights & Analytics (Pro Mode only) */}
-            {currentTab === 'insights' && uiMode === 'pro' && (
+            {activeTab === 'insights' && uiMode === 'pro' && (
               <InsightsView
                 stats={marketStats}
                 jobs={jobs}
@@ -467,7 +475,7 @@ function AppContent() {
             )}
 
             {/* Tab 6: System Settings & Gemini BYOK */}
-            {currentTab === 'settings' && (
+            {activeTab === 'settings' && (
               <SettingsView
                 onOpenAdmin={() => setIsAdminOpen(true)}
                 uiMode={uiMode}
@@ -485,7 +493,7 @@ function AppContent() {
       {/* Mobile Bottom Navigation Bar - Only visible when user is logged in */}
       {user && (
         <MobileNav
-          currentTab={currentTab}
+          currentTab={activeTab}
           onSelectTab={setCurrentTab}
           jobsCount={jobs.length}
           uiMode={uiMode}

@@ -90,6 +90,23 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }
 
   const [isStarting, setIsStarting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [prevUserId, setPrevUserId] = useState<string | null>(null);
+
+  if (user && user.id !== prevUserId) {
+    setPrevUserId(user.id);
+    const cached = localStorage.getItem(getStorageKey(user.id));
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          setKeywords(parsed);
+          setBulkText(parsed.join('\n'));
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
 
   // Sync keywords to local storage cache for offline/instant resume
   useEffect(() => {
@@ -106,21 +123,6 @@ export const SearchView: React.FC<SearchViewProps> = ({ onViewJobs, onOpenAuth }
     if (!user) return;
     const currentKey = getStorageKey(user.id);
 
-    // 1. Check user-specific localStorage first for instantaneous display
-    const cached = localStorage.getItem(currentKey);
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          setKeywords(parsed);
-          setBulkText(parsed.join('\n'));
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    // 2. Fetch authoritative keywords from Supabase user_settings for this account
     supabase
       .from('user_settings')
       .select('keywords')

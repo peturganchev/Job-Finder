@@ -23,28 +23,35 @@ export const AIProgressBar: React.FC<AIProgressBarProps> = ({
 }) => {
   const [progress, setProgress] = useState<number>(0);
   const [phaseIndex, setPhaseIndex] = useState<number>(0);
+  const [prevIsLoading, setPrevIsLoading] = useState<boolean>(isLoading);
   const onCompleteRef = useRef(onComplete);
+
+  if (prevIsLoading !== isLoading) {
+    setPrevIsLoading(isLoading);
+    if (isLoading) {
+      setProgress(5);
+      setPhaseIndex(0);
+    } else if (progress > 0 && progress < 100) {
+      setProgress(100);
+    }
+  }
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
 
   useEffect(() => {
-    if (!isLoading) {
-      if (progress > 0 && progress < 100) {
-        setProgress(100);
-        const timer = setTimeout(() => {
-          setProgress(0);
-          setPhaseIndex(0);
-          if (onCompleteRef.current) onCompleteRef.current();
-        }, 1200);
-        return () => clearTimeout(timer);
-      }
-      return;
-    }
+    if (isLoading || progress !== 100) return;
+    const timer = setTimeout(() => {
+      setProgress(0);
+      setPhaseIndex(0);
+      if (onCompleteRef.current) onCompleteRef.current();
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [isLoading, progress]);
 
-    setProgress(5);
-    setPhaseIndex(0);
+  useEffect(() => {
+    if (!isLoading) return;
 
     const interval = setInterval(() => {
       setProgress((prev) => {
