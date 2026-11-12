@@ -20,12 +20,15 @@ app = FastAPI(
 
 # CORS Configuration for React Frontend
 origins = [
-    "http://localhost:5173",  # Vite Dev Server
+    "https://job-finder.archevyn.dev",
+    "http://localhost:5173",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
-    "*",
 ]
+frontend_origin = os.getenv("FRONTEND_ORIGIN")
+if frontend_origin:
+    origins.append(frontend_origin.strip())
 
 app.add_middleware(
     CORSMiddleware,

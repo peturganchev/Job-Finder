@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 
-from src.api.dependencies import get_current_user_optional, get_supabase_client, get_service_role_client
+from src.api.dependencies import get_current_user_required, get_supabase_client, get_service_role_client
 
 router = APIRouter()
 
@@ -164,7 +164,7 @@ def _send_approval_email(email: str, full_name: str, invite_url: str) -> bool:
 
 @router.get("/requests", summary="List all waitlist requests (Admin only)")
 def list_waitlist_requests(
-    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+    user: Dict[str, Any] = Depends(get_current_user_required),
 ):
     """Returns all access requests. Restricted to administrators."""
     client = get_supabase_client()
@@ -173,7 +173,7 @@ def list_waitlist_requests(
     if not db:
         raise HTTPException(status_code=500, detail="Database not configured")
 
-    user_email = user.get("email", "").lower() if user else ""
+    user_email = (user.get("email") or "").lower()
     if user_email not in ADMIN_EMAILS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -190,7 +190,7 @@ def list_waitlist_requests(
 @router.post("/approve", response_model=WaitlistResponse, summary="Approve waitlist candidate")
 def approve_request(
     payload: WaitlistActionRequest,
-    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+    user: Dict[str, Any] = Depends(get_current_user_required),
 ):
     """
     Approves candidate, updates DB status, generates invitation link,
@@ -202,7 +202,7 @@ def approve_request(
     if not db:
         raise HTTPException(status_code=500, detail="Database not configured")
 
-    user_email = user.get("email", "").lower() if user else ""
+    user_email = (user.get("email") or "").lower()
     if user_email not in ADMIN_EMAILS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -251,7 +251,7 @@ def approve_request(
 @router.post("/reject", response_model=WaitlistResponse, summary="Reject waitlist candidate")
 def reject_request(
     payload: WaitlistActionRequest,
-    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+    user: Dict[str, Any] = Depends(get_current_user_required),
 ):
     """Rejects waitlist applicant."""
     client = get_supabase_client()
@@ -260,7 +260,7 @@ def reject_request(
     if not db:
         raise HTTPException(status_code=500, detail="Database not configured")
 
-    user_email = user.get("email", "").lower() if user else ""
+    user_email = (user.get("email") or "").lower()
     if user_email not in ADMIN_EMAILS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -296,17 +296,16 @@ def check_whitelist(email: str):
             message="Администраторски акаунт."
         )
 
-    client = get_supabase_client()
-    if not client:
-        # Fallback to allowed if database cannot be reached
+    db = get_service_role_client() or get_supabase_client()
+    if not db:
         return WhitelistCheckResponse(
-            allowed=True,
-            status="approved",
-            message="Проверката премина успешно."
+            allowed=False,
+            status="error",
+            message="Услугата за проверка на достъп е временно недостъпна."
         )
 
     try:
-        res = client.table("access_requests").select("status").eq("email", clean_email).limit(1).execute()
+        res = db.table("access_requests").select("status").eq("email", clean_email).limit(1).execute()
         if not res.data:
             return WhitelistCheckResponse(
                 allowed=False,
@@ -335,9 +334,8 @@ def check_whitelist(email: str):
             )
     except Exception as e:
         print(f"⚠️ Грешка при проверка на whitelist: {e}")
-        # Graceful fallback: allow signup if table is unavailable
         return WhitelistCheckResponse(
-            allowed=True,
-            status="approved",
-            message="Проверката премина успешно."
+            allowed=False,
+            status="error",
+            message="Услугата за проверка на достъп е временно недостъпна."
         )

@@ -2,12 +2,12 @@
 FastAPI Dependencies for Job-Finder v2.
 Handles Supabase JWT validation, user context extraction, and repository injection.
 """
+import hmac
 import os
 from typing import Optional, Dict, Any
 from fastapi import Header, HTTPException, Depends, status
 from src.database.repository import get_repository
 from src.intelligence.gemini_analyzer import GeminiJobAnalyzer
-from src.settings_manager import SettingsManager
 
 try:
     from supabase import create_client, Client
@@ -42,11 +42,10 @@ def get_service_role_client() -> Optional[Any]:
 
 async def get_current_user_optional(
     authorization: Optional[str] = Header(None, alias="Authorization"),
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
 ) -> Optional[Dict[str, Any]]:
     """
-    Extracts user details from Supabase Bearer JWT or fallback X-User-Id header.
-    Returns None if no authentication is provided.
+    Extracts user details from Supabase Bearer JWT.
+    Returns None if no valid authentication is provided.
     """
     access_token = None
     if authorization:
@@ -56,7 +55,6 @@ async def get_current_user_optional(
         elif len(parts) == 1:
             access_token = parts[0]
 
-    # 1. If JWT token provided, validate with Supabase Auth
     if access_token:
         client = get_supabase_client()
         if client:
@@ -70,16 +68,7 @@ async def get_current_user_optional(
                         "access_token": access_token
                     }
             except Exception as e:
-                # Token might be invalid or expired
                 print(f"⚠️ JWT verification failed: {e}")
-
-    # 2. Development / Testing fallback via X-User-Id header
-    if x_user_id:
-        return {
-            "id": str(x_user_id),
-            "email": None,
-            "access_token": access_token
-        }
 
     return None
 
@@ -97,25 +86,36 @@ async def get_current_user_required(
     return user
 
 
+def verify_ingest_secret(
+    x_ingest_secret: Optional[str] = Header(None, alias="X-Ingest-Secret"),
+) -> bool:
+    """Validates shared ingest secret for passive webhook endpoints."""
+    expected = os.getenv("INGEST_SECRET")
+    if not expected or not x_ingest_secret or not hmac.compare_digest(x_ingest_secret, expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing ingest secret.",
+        )
+    return True
+
+
 def get_repo(
-    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)
+    user: Dict[str, Any] = Depends(get_current_user_required)
 ):
     """
-    Injects Job Repository configured for the current authenticated user (or global/SQLite mode).
+    Injects Job Repository configured for the current authenticated user.
     """
-    user_id = user["id"] if user else None
-    access_token = user.get("access_token") if user else None
-    return get_repository(user_id=user_id, access_token=access_token)
+    return get_repository(user_id=user["id"], access_token=user.get("access_token"))
 
 
 def get_analyzer(
-    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional)
+    user: Dict[str, Any] = Depends(get_current_user_required)
 ) -> GeminiJobAnalyzer:
     """
-    Injects configured GeminiJobAnalyzer with user-specific keys and profile if present.
+    Injects configured GeminiJobAnalyzer with user-specific keys and profile.
     """
-    user_id = user["id"] if user else None
-    access_token = user.get("access_token") if user else None
+    user_id = user["id"]
+    access_token = user.get("access_token")
 
     user_key = None
     user_model = None

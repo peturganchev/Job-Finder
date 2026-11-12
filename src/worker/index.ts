@@ -43,13 +43,10 @@ export default {
 
       try {
         const response = await fetch(forwardRequest);
-        // Добавяме CORS за сигурност
-        const newHeaders = new Headers(response.headers);
-        newHeaders.set("Access-Control-Allow-Origin", "*");
         return new Response(response.body, {
           status: response.status,
           statusText: response.statusText,
-          headers: newHeaders,
+          headers: response.headers,
         });
       } catch (err: any) {
         return new Response(
