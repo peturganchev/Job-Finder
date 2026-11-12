@@ -17,8 +17,9 @@ from src.api.schemas import (
     InboundEmailResponse,
     BackfillBatchRequest,
 )
-from src.api.dependencies import get_repo, get_analyzer, get_current_user_optional
+from src.api.dependencies import get_repo, get_analyzer, verify_ingest_secret
 from src.database.models import ApplicationStatus
+from src.database.repository import get_repository
 from src.scrapers.email_digest_parser import JobsBgEmailParser, batch_categorize_jobs, classify_job_rule_based
 
 router = APIRouter()
@@ -198,25 +199,18 @@ def generate_cover_letter(
             detail="Job title and company name are required to generate a cover letter."
         )
 
+    if payload.profile_data is not None:
+        analyzer.profile = payload.profile_data
+
     letter = analyzer.generate_full_cover_letter(
         title=title,
         company=company,
         description=description or ""
     )
 
-    # If job_id was given and user is authenticated, update the job in repo
     if payload.job_id and letter:
         try:
-            job = repo.get_job_by_id(payload.job_id)
-            if job:
-                repo.update_ai_analysis(
-                    job_id=payload.job_id,
-                    match_score=job.match_score or 50,
-                    ai_summary=job.ai_summary or "",
-                    matched_skills=job.matched_skills or [],
-                    missing_skills=job.missing_skills or [],
-                    cover_letter=letter
-                )
+            repo.update_cover_letter(job_id=payload.job_id, cover_letter=letter)
         except Exception:
             pass
 
@@ -278,13 +272,14 @@ def import_catalog_jobs(
 @router.post("/inbound-email", response_model=InboundEmailResponse, summary="Ingest Jobs.bg daily digest from email")
 def ingest_jobs_bg_email(
     request: InboundEmailRequest,
-    repo = Depends(get_repo),
+    _auth: bool = Depends(verify_ingest_secret),
 ):
     """
     Webhook receiving email digest content from Jobs.bg.
     Parses job listings, classifies them using dedicated Gemini AI key,
     and inserts into the master public.jobs_bg database.
     """
+    repo = get_repository()
     fmt = (request.format or "text").lower()
     if fmt == "html" or "<html" in request.content.lower():
         parsed_jobs = JobsBgEmailParser.parse_html(request.content)
@@ -321,12 +316,13 @@ def ingest_jobs_bg_email(
 @router.post("/backfill-batch", response_model=StandardMessageResponse, summary="Ingest batch of jobs into jobs_bg (Zero AI tokens)")
 def backfill_jobs_batch(
     request: BackfillBatchRequest,
-    repo = Depends(get_repo),
+    _auth: bool = Depends(verify_ingest_secret),
 ):
     """
     Directly ingests a batch of raw jobs (from browser console, userscript, or local worker)
     into public.jobs_bg using zero-token NLP classification.
     """
+    repo = get_repository()
     if not request.jobs:
         return StandardMessageResponse(success=True, message="No jobs provided.", data={"saved_count": 0})
 

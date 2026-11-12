@@ -202,11 +202,20 @@ def generate_cover_letter(
             detail="Job title and company name are required."
         )
 
+    if payload.profile_data is not None:
+        analyzer.profile = payload.profile_data
+
     letter = analyzer.generate_full_cover_letter(
         title=title,
         company=company,
         description=description or ""
     )
+
+    if payload.job_id and letter:
+        try:
+            repo.update_cover_letter(job_id=payload.job_id, cover_letter=letter)
+        except Exception:
+            pass
 
     return CoverLetterResponse(
         job_id=payload.job_id,

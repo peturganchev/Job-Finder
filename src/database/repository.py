@@ -155,6 +155,17 @@ class JobRepository:
             conn.commit()
             return cursor.rowcount > 0
 
+    def update_cover_letter(self, job_id: int, cover_letter: str) -> bool:
+        """Записва само мотивационното писмо без да променя AI оценката."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE jobs SET cover_letter = ? WHERE id = ?",
+                (cover_letter, job_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
     def mark_as_notified(self, job_id: int) -> bool:
         """Маркира обявата като успешно изпратена в Discord/Telegram."""
         now_str = datetime.now().isoformat()

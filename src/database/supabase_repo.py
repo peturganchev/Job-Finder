@@ -152,6 +152,23 @@ class SupabaseRepository:
                 return False
         return False
 
+    def update_cover_letter(self, job_id: Union[int, str], cover_letter: str) -> bool:
+        """Записва само мотивационното писмо без да презаписва AI оценката."""
+        if not self.user_id:
+            return False
+        payload = {
+            "user_id": str(self.user_id),
+            "job_id": str(job_id),
+            "cover_letter": cover_letter,
+            "updated_at": datetime.now().isoformat()
+        }
+        try:
+            res = self.client.table("user_jobs").upsert(payload, on_conflict="user_id,job_id").execute()
+            return len(res.data) > 0
+        except Exception as e:
+            print(f"⚠️ Грешка при обновяване на cover_letter в user_jobs: {e}")
+            return False
+
     def update_status(self, job_id: Union[int, str], status: ApplicationStatus) -> bool:
         """Променя статуса на кандидатурата за дадения потребител."""
         if not self.user_id:
@@ -220,6 +237,29 @@ class SupabaseRepository:
             if not res.data:
                 return None
             row = res.data[0]
+            if self.user_id:
+                uj_res = (
+                    self.client.table("user_jobs")
+                    .select("*")
+                    .eq("user_id", str(self.user_id))
+                    .eq("job_id", str(job_id))
+                    .limit(1)
+                    .execute()
+                )
+                if uj_res.data:
+                    uj = uj_res.data[0]
+                    for field in (
+                        "status",
+                        "match_score",
+                        "ai_summary",
+                        "matched_skills",
+                        "missing_skills",
+                        "cover_letter",
+                        "notified",
+                        "notified_at",
+                    ):
+                        if field in uj and uj[field] is not None:
+                            row[field] = uj[field]
             return self._format_job(row)
         except Exception as e:
             print(f"⚠️ Грешка при извличане на обява {job_id}: {e}")
@@ -315,28 +355,20 @@ class SupabaseRepository:
                 }
         else:
             try:
-                res = self.client.table("jobs").select("id, source, match_score").execute()
+                res = self.client.table("jobs").select("id, source").execute()
                 data = res.data or []
                 by_source = {}
-                scores = [d["match_score"] for d in data if d.get("match_score") is not None]
-                avg_score = round(sum(scores) / len(scores), 1) if scores else 0
                 for d in data:
                     src = d.get("source") or "other"
                     by_source[src] = by_source.get(src, 0) + 1
                 return {
                     "total_jobs": len(data),
-                    "avg_match_score": avg_score,
+                    "avg_match_score": 0,
                     "by_status": {},
                     "by_source": by_source
                 }
             except Exception as e:
                 print(f"⚠️ Грешка при извличане на глобална статистика от Supabase: {e}")
-                return {
-                    "total_jobs": 0,
-                    "avg_match_score": 0,
-                    "by_status": {},
-                    "by_source": {}
-                }
                 return {
                     "total_jobs": 0,
                     "avg_match_score": 0,
@@ -462,6 +494,9 @@ class SupabaseRepository:
             ai_summary=data.get("ai_summary"),
             matched_skills=data.get("matched_skills") or [],
             missing_skills=data.get("missing_skills") or [],
+            cover_letter=data.get("cover_letter"),
+            notified=bool(data.get("notified", False)),
+            notified_at=data.get("notified_at"),
         )
 
     def upsert_jobs_bg(self, items: List[Dict[str, Any]]) -> int:
