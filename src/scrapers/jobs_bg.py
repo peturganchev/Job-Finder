@@ -184,13 +184,13 @@ class JobsBgScraper(BaseScraper):
                             company = comp_elem.get_text(strip=True)
 
                         # Търсене на локация
-                        loc_elem = parent_card.select_one(".location, [class*='location'], span:contains('София')")
+                        loc_elem = parent_card.select_one(".location, [class*='location'], span:-soup-contains('София')")
                         if loc_elem:
                             location = loc_elem.get_text(strip=True)
 
                         # Търсене на заплата ако не е намерена от заглавието
                         if not salary:
-                            sal_elem = parent_card.select_one("[class*='salary'], span.text-success, b:contains('BGN')")
+                            sal_elem = parent_card.select_one("[class*='salary'], span.text-success, b:-soup-contains('BGN')")
                             if sal_elem:
                                 salary = sal_elem.get_text(strip=True)
 
@@ -245,11 +245,11 @@ class JobsBgScraper(BaseScraper):
             description = desc_elem.get_text(separator="\n", strip=True) if desc_elem else ""
 
             # Търсене на дата на публикуване
-            date_elem = soup.select_one(".date, [class*='posted'], span:contains('Публикувана')")
+            date_elem = soup.select_one(".date, [class*='posted'], span:-soup-contains('Публикувана')")
             posted_date = date_elem.get_text(strip=True) if date_elem else None
 
             # Търсене на заплата на самата страница
-            sal_elem = soup.select_one("[class*='salary'], .salary-badge, b:contains('BGN')")
+            sal_elem = soup.select_one("[class*='salary'], .salary-badge, b:-soup-contains('BGN')")
             salary = sal_elem.get_text(strip=True) if sal_elem else None
 
             return {
