@@ -312,7 +312,12 @@ def execute_search_job(
 
         if new_jobs:
             _update_task(task_id, progress=80, log_msg=f"🧠 AI Оценка на {len(new_jobs)} нови обяви с Gemini...", user_id=user_id, access_token=access_token)
-            analyzer = GeminiJobAnalyzer(api_key=user_key, model_name=user_model, profile_data=user_profile)
+            analyzer = GeminiJobAnalyzer(
+                api_key=user_key,
+                model_name=user_model,
+                profile_data=user_profile,
+                use_local_fallback=False,
+            )
             batch_size = 8
             for i in range(0, len(new_jobs), batch_size):
                 batch = new_jobs[i:i + batch_size]

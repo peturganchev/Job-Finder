@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { X, Lock, Mail, Loader2, AlertCircle, CheckCircle2, UserPlus, LogIn, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -29,7 +29,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isWaitlistBlocked, setIsWaitlistBlocked] = useState(false);
 
-  useEffect(() => {
+  const openKey = `${isOpen}:${initialMode}:${prefilledEmail}`;
+  const [prevOpenKey, setPrevOpenKey] = useState(openKey);
+
+  if (prevOpenKey !== openKey) {
+    setPrevOpenKey(openKey);
     if (isOpen) {
       setMode(initialMode);
       if (prefilledEmail) {
@@ -39,7 +43,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setSuccessMsg(null);
       setIsWaitlistBlocked(false);
     }
-  }, [isOpen, initialMode, prefilledEmail]);
+  }
 
   if (!isOpen) return null;
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { X, Check, Trash2, Clock, Users, RefreshCw, AlertCircle, Copy, CheckCircle2, UserCheck, UserX, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { apiGetWaitlistRequests, apiApproveWaitlist, apiRejectWaitlist, type WaitlistRequestItem } from '../lib/api';
@@ -20,7 +20,7 @@ export const WaitlistAdminModal: React.FC<WaitlistAdminModalProps> = ({ isOpen, 
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const fetchRequests = async () => {
+  const fetchRequests = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
@@ -32,12 +32,26 @@ export const WaitlistAdminModal: React.FC<WaitlistAdminModalProps> = ({ isOpen, 
     } finally {
       setLoading(false);
     }
-  };
+  }, [session]);
 
   useEffect(() => {
-    if (isOpen) {
-      fetchRequests();
-    }
+    if (!isOpen) return;
+    let active = true;
+    apiGetWaitlistRequests(session?.access_token)
+      .then((data) => {
+        if (active) {
+          setRequests(data);
+          setErrorMsg(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (active) {
+          setErrorMsg(err instanceof Error ? err.message : 'Грешка при зареждане на заявките.');
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [isOpen, session?.access_token]);
 
   const handleApprove = async (req: WaitlistRequestItem) => {

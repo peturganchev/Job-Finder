@@ -22,6 +22,7 @@ TEST_USER = {
 @pytest.fixture(autouse=True)
 def offline_auth_and_sqlite(monkeypatch, request):
     monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
     monkeypatch.delenv("SUPABASE_KEY", raising=False)
     monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)

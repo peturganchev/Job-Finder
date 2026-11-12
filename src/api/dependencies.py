@@ -139,5 +139,6 @@ def get_analyzer(
     return GeminiJobAnalyzer(
         api_key=user_key,
         model_name=user_model,
-        profile_data=user_profile
+        profile_data=user_profile,
+        use_local_fallback=False,
     )

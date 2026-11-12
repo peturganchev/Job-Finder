@@ -127,18 +127,29 @@ def load_profile() -> dict:
 
 
 class GeminiJobAnalyzer:
-    def __init__(self, api_key: Optional[str] = None, model_name: Optional[str] = None, profile_data: Optional[Dict[str, Any]] = None):
-        from src.settings_manager import SettingsManager
-        sm = SettingsManager()
-        raw_model = (model_name or sm.load().ai.gemini_model or "gemini-3.8-flash").strip()
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model_name: Optional[str] = None,
+        profile_data: Optional[Dict[str, Any]] = None,
+        use_local_fallback: bool = True,
+    ):
+        if use_local_fallback:
+            from src.settings_manager import SettingsManager
+            sm = SettingsManager()
+            raw_model = (model_name or sm.load().ai.gemini_model or "gemini-3.8-flash").strip()
+            self.profile = profile_data or load_profile()
+            self.api_key = api_key or sm.get_api_key()
+        else:
+            raw_model = (model_name or "gemini-3.5-flash").strip()
+            self.profile = profile_data or {}
+            self.api_key = api_key
         if raw_model.lower() == "antigravity":
             self.model_name = "antigravity-preview-latest"
         elif raw_model.startswith("models/"):
             self.model_name = raw_model.replace("models/", "")
         else:
             self.model_name = raw_model
-        self.profile = profile_data or load_profile()
-        self.api_key = api_key or sm.get_api_key()
         self.client = None
 
         if self.api_key and genai:

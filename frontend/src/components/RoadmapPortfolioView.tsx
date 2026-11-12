@@ -163,8 +163,11 @@ export const RoadmapPortfolioView: React.FC = () => {
         if (!error && data && data[0]?.roadmap_progress) {
           const remote = data[0].roadmap_progress;
           if (typeof remote === 'object' && !Array.isArray(remote)) {
-            setSkillProgress((prev) => ({ ...prev, ...remote }));
-            localStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify({ ...skillProgress, ...remote }));
+            setSkillProgress((prev) => {
+              const merged = { ...prev, ...remote };
+              localStorage.setItem(ROADMAP_STORAGE_KEY, JSON.stringify(merged));
+              return merged;
+            });
           }
         }
       });
