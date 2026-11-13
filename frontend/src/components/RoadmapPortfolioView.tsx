@@ -43,29 +43,84 @@ const DEEPLEARNING_COURSES = [
     level: 1,
     title: 'Ниво 1: Foundation (Prompting, AI Python & Spec-Driven Разработка)',
     courses: [
-      { name: 'ChatGPT Prompt Engineering for Developers', by: 'DeepLearning.AI & OpenAI', meta: 'Завършен' },
-      { name: 'Build with Andrew', by: 'DeepLearning.AI', meta: '1.5h · Introductory' },
-      { name: 'AI Python for Beginners', by: 'DeepLearning.AI', meta: '4.5h · Introductory' },
-      { name: 'Spec-Driven Development with Coding Agents', by: 'JetBrains', meta: '1.3h · Beginner' },
+      {
+        name: 'ChatGPT Prompt Engineering for Developers',
+        by: 'DeepLearning.AI & OpenAI',
+        meta: 'Завършен',
+        url: 'https://www.deeplearning.ai/short-courses/chatgpt-prompt-engineering-for-developers/',
+      },
+      {
+        name: 'Build with Andrew',
+        by: 'DeepLearning.AI',
+        meta: '1.5h · Introductory',
+        url: 'https://www.deeplearning.ai/courses/build-with-andrew/',
+      },
+      {
+        name: 'AI Python for Beginners',
+        by: 'DeepLearning.AI',
+        meta: '4.5h · Introductory',
+        url: 'https://www.deeplearning.ai/short-courses/ai-python-for-beginners/',
+      },
+      {
+        name: 'Spec-Driven Development with Coding Agents',
+        by: 'JetBrains',
+        meta: '1.3h · Beginner',
+        url: 'https://www.deeplearning.ai/courses/spec-driven-development-with-coding-agents',
+      },
     ],
   },
   {
     level: 2,
     title: 'Ниво 2: Core Track (Агентни Архитектури, Agentic RAG & Structured Output)',
     courses: [
-      { name: 'Agentic AI with Andrew Ng', by: 'DeepLearning.AI', meta: '8.2h · Intermediate' },
-      { name: 'Getting Structured LLM Output', by: 'DotTxt', meta: '1.5h · Intermediate' },
-      { name: 'Building Agentic RAG with LlamaIndex', by: 'LlamaIndex', meta: '1h · Introductory' },
+      {
+        name: 'Agentic AI with Andrew Ng',
+        by: 'DeepLearning.AI',
+        meta: '8.2h · Intermediate',
+        url: 'https://www.deeplearning.ai/courses/agentic-ai/',
+      },
+      {
+        name: 'Getting Structured LLM Output',
+        by: 'DotTxt',
+        meta: '1.5h · Intermediate',
+        url: 'https://www.deeplearning.ai/short-courses/getting-structured-llm-output/',
+      },
+      {
+        name: 'Building Agentic RAG with LlamaIndex',
+        by: 'LlamaIndex',
+        meta: '1h · Introductory',
+        url: 'https://www.deeplearning.ai/short-courses/building-agentic-rag-with-llamaindex/',
+      },
     ],
   },
   {
     level: 3,
     title: 'Ниво 3: Specialization & Production (Eval Harness, RAG & Anthropic)',
     courses: [
-      { name: 'Evaluating AI Agents', by: 'Arize AI', meta: '2.5h · Introductory' },
-      { name: 'Retrieval Augmented Generation (RAG) Course', by: 'DeepLearning.AI', meta: '35h · Explore more' },
-      { name: 'MCP: Build Rich-Context AI Apps with Anthropic', by: 'Anthropic', meta: '2h · Explore more' },
-      { name: 'Agent Skills with Anthropic', by: 'Anthropic', meta: '2.5h · Explore more' },
+      {
+        name: 'Evaluating AI Agents',
+        by: 'Arize AI',
+        meta: '2.5h · Introductory',
+        url: 'https://www.deeplearning.ai/short-courses/evaluating-ai-agents/',
+      },
+      {
+        name: 'Retrieval Augmented Generation (RAG) Course',
+        by: 'DeepLearning.AI',
+        meta: '35h · Explore more',
+        url: 'https://www.deeplearning.ai/courses/retrieval-augmented-generation-rag/',
+      },
+      {
+        name: 'MCP: Build Rich-Context AI Apps with Anthropic',
+        by: 'Anthropic',
+        meta: '2h · Explore more',
+        url: 'https://www.deeplearning.ai/short-courses/mcp-build-rich-context-ai-apps-with-anthropic/',
+      },
+      {
+        name: 'Agent Skills with Anthropic',
+        by: 'Anthropic',
+        meta: '2.5h · Explore more',
+        url: 'https://www.deeplearning.ai/short-courses/agent-skills-with-anthropic/',
+      },
     ],
   },
 ];
@@ -576,16 +631,22 @@ export const RoadmapPortfolioView: React.FC = () => {
                 {isOpen && (
                   <div className="px-4 pb-4 space-y-2 border-t border-slate-800/80 pt-3">
                     {group.courses.map((c) => (
-                      <div
+                      <a
                         key={c.name}
-                        className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs"
+                        href={c.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-2.5 rounded-lg bg-slate-900/80 border border-slate-800/60 hover:border-emerald-500/40 hover:bg-slate-900 transition flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs group"
                       >
-                        <span className="font-medium text-slate-200">{c.name}</span>
+                        <span className="font-medium text-slate-200 group-hover:text-emerald-300 transition inline-flex items-center gap-1.5">
+                          <span>{c.name}</span>
+                          <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-emerald-400 shrink-0" />
+                        </span>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-[11px] text-slate-400">{c.meta}</span>
                           <span className="text-[11px] text-teal-400/90 font-mono">{c.by}</span>
                         </div>
-                      </div>
+                      </a>
                     ))}
                   </div>
                 )}
